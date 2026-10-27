@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "recordPreStabilizer": true,
+  "recordPostStabilizer": true,
+  "recordViewport": true,
+  "viewportDebounceMs": 120,
+  "flushIntervalMs": 1000,
+  "maxQueuedCheckpoints": 2,
+  "checkpointFlattened": true,
+  "checkpointLayersOn": ["start", "pause", "end", "manual"],
+  "autoSaveWhileStrokeOpen": "inputs-only",
+  "rgbConversion": "none",
+  "alphaPolicy": "png-retains-alpha",
+  "notes": "运行中的页面使用内置默认配置。本文件是同一配置的可读副本。监督字段、训练帧数和重要性标签不在此配置中。"
+}

@@ -182,4 +182,20 @@ export class KlHistory {
     isPaused(): boolean {
         return this.pauseStack > 0;
     }
+
+    /** Makes this composed snapshot the only history entry, so undo cannot return to an older canvas. */
+    replaceRoot(oldest: THistoryEntryDataComposed): void {
+        validateHistoryEntry(oldest, oldest.size);
+        this.entries = [
+            {
+                timestamp: Date.now(),
+                memoryEstimateBytes: estimateBytes(oldest),
+                data: oldest,
+            },
+        ];
+        this.index = 0;
+        this.composed = oldest;
+        this.totalActions++;
+        this.broadcast();
+    }
 }

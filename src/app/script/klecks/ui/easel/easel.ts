@@ -95,6 +95,7 @@ export class Easel<GToolId extends string> {
     private doRender = false; // true -> will render on next renderLoop
     private cursorPos: TVector2D | undefined; // so brush cursor not top left corner after reload
     private isFrozen: boolean = false; // disable interaction with the easel whatsoever
+    private replayImage: CanvasImageSource | null = null;
     private lastRenderedTransform: TViewportTransform = {} as TViewportTransform; // previously rendered viewport transformation
     private pinchInitialTransform: TViewportTransform | undefined; // when starting a pinch-to-zoom gesture
     private targetTransform: TViewportTransform;
@@ -267,6 +268,9 @@ export class Easel<GToolId extends string> {
     }
 
     private readonly onWheel = (e: TWheelEvent): void => {
+        if (this.isFrozen) {
+            return;
+        }
         e.event?.preventDefault();
         let isImmediate = false;
         if (Math.abs(e.deltaY) < 0.8) {
@@ -345,6 +349,15 @@ export class Easel<GToolId extends string> {
             transform: this.getResetTransform(),
             onBeforeRender: p.onBeforeRender,
             renderAfter: (ctx, renderedTransform) => {
+                if (this.replayImage) {
+                    ctx.save();
+                    ctx.globalAlpha = 1;
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.clearRect(0, 0, this.project.width, this.project.height);
+                    ctx.drawImage(this.replayImage, 0, 0);
+                    ctx.restore();
+                    return;
+                }
                 const tool = this.getActiveTool();
                 tool.renderAfterViewport?.(ctx, renderedTransform);
             },
@@ -484,10 +497,16 @@ export class Easel<GToolId extends string> {
         this.pointerListener = new PointerListener({
             target: this.viewport.getElement(),
             onPointer: (e) => {
+                if (this.isFrozen) {
+                    return;
+                }
                 this.pointerPreprocessor.chainIn(e);
             },
             onWheel: this.onWheel,
             onEnterLeave: (isOver) => {
+                if (this.isFrozen) {
+                    return;
+                }
                 const tool = this.getActiveTool();
                 if (!isOver) {
                     this.cursorPos = undefined;
@@ -911,6 +930,11 @@ export class Easel<GToolId extends string> {
 
     setIsFrozen(b: boolean): void {
         this.isFrozen = b;
+    }
+
+    setReplayImage(image: CanvasImageSource | null): void {
+        this.replayImage = image;
+        this.requestRender();
     }
 
     getElement(): HTMLElement {

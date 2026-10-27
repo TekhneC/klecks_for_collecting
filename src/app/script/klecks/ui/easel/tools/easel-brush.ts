@@ -22,8 +22,25 @@ export type TEaselBrushEvent = {
     pressure: number;
 };
 
+export type TEaselBrushCapture = {
+    phase: 'down' | 'move' | 'up';
+    x: number;
+    y: number;
+    relX: number;
+    relY: number;
+    pressure: number | undefined;
+    pressureRaw: number | undefined;
+    pointerType: string;
+    pointerId: number;
+    time: number;
+    isCoalesced: boolean;
+    button?: string;
+    endedBy?: 'up' | 'cancel' | 'leave';
+};
+
 export type TEaselBrushParams = {
     radius: number;
+    onCapture?: (sample: TEaselBrushCapture) => void;
 
     onLineStart: (e: TEaselBrushEvent) => void;
     onLineGo: (e: TEaselBrushEvent) => void;
@@ -36,6 +53,7 @@ type TLineToolDirection = 'x' | 'y';
 export class EaselBrush implements TEaselTool {
     private readonly svgEl: SVGElement;
     private radius: number;
+    private readonly onCapture: TEaselBrushParams['onCapture'];
     private readonly onLineStart: TEaselBrushParams['onLineStart'];
     private readonly onLineGo: TEaselBrushParams['onLineGo'];
     private readonly onLineEnd: TEaselBrushParams['onLineEnd'];
@@ -81,6 +99,24 @@ export class EaselBrush implements TEaselTool {
 
         const pressure = e.pressure ?? 1;
         const isCoalesced = e.isCoalesced;
+        if (this.onCapture && (e.type === 'pointerdown' || e.type === 'pointermove' || e.type === 'pointerup')) {
+            const phase = e.type === 'pointerdown' ? 'down' : e.type === 'pointermove' ? 'move' : 'up';
+            this.onCapture({
+                phase,
+                x,
+                y,
+                relX: e.relX,
+                relY: e.relY,
+                pressure: e.pressure,
+                pressureRaw: e.pressureRaw,
+                pointerType: e.pointerType,
+                pointerId: e.pointerId,
+                time: e.time,
+                isCoalesced,
+                button: e.button,
+                endedBy: e.endedBy,
+            });
+        }
         const shiftIsPressed = this.easel.keyListener.isPressed('shift');
 
         if (shiftIsPressed && !this.firstShiftPos) {
@@ -141,6 +177,7 @@ export class EaselBrush implements TEaselTool {
     // ----------------------------------- public -----------------------------------
     constructor(p: TEaselBrushParams) {
         this.radius = p.radius;
+        this.onCapture = p.onCapture;
         this.onLineStart = p.onLineStart;
         this.onLineGo = p.onLineGo;
         this.onLineEnd = p.onLineEnd;

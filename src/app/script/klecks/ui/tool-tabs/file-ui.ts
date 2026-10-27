@@ -13,7 +13,6 @@ import * as classes from './file-ui.module.scss';
 import { BrowserStorageHeaderUi } from '../components/browser-storage-header-ui';
 import { css } from '../../../bb/base/base';
 
-const newImageImg = getIconUrl('new-image');
 const exportImg = getIconUrl('export');
 const shareImg = getIconUrl('share');
 const uploadImg = getIconUrl('upload');
@@ -98,18 +97,6 @@ export class FileUi {
             });
 
             // --- new, import, save ---
-            const newButton = BB.el({
-                tagName: 'button',
-                className: 'kl-button grid-button',
-                content: createButtonContent(LANG('file-new'), newImageImg, true),
-                props: {
-                    tabIndex: -1,
-                },
-                css: {
-                    float: 'left',
-                },
-                onClick: () => p.onNewImage(),
-            });
             const importButton = BB.el({
                 tagName: 'button',
                 className: 'kl-button grid-button',
@@ -309,7 +296,6 @@ export class FileUi {
 
             BB.append(this.rootEl, [
                 saveNote,
-                newButton,
                 importButton,
                 BB.el({ css: { clear: 'both' } }),
                 saveRow,

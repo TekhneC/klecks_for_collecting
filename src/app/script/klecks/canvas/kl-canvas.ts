@@ -126,6 +126,7 @@ export class KlCanvas {
         layers?: (TKlNamedLayer<HTMLCanvasElement> & {
             id: TLayerId;
         })[];
+        asHistoryRoot?: boolean;
     }): number {
         if (
             !p.width ||
@@ -198,7 +199,11 @@ export class KlCanvas {
                     attributes: 'all',
                 }) as Record<TLayerId, THistoryEntryLayerComposed>,
             };
-            this.klHistory.push(historyEntryData);
+            if (p.asHistoryRoot) {
+                this.klHistory.replaceRoot(historyEntryData);
+            } else {
+                this.klHistory.push(historyEntryData);
+            }
         }
 
         return this.layers.length - 1;

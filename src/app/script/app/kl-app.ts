@@ -10,6 +10,7 @@ import {
     TExportType,
     TGradient,
     TKlProject,
+    TMixMode,
     TRgb,
     TUiLayout,
 } from '../klecks/kl-types';
@@ -30,6 +31,8 @@ import { StatusOverlay } from '../klecks/ui/components/status-overlay';
 import { SaveToComputer } from '../klecks/storage/save-to-computer';
 import { ToolspaceScroller } from '../klecks/ui/components/toolspace-scroller';
 import { translateSmoothing } from '../klecks/utils/translate-smoothing';
+import { CaptureController, readPlainBrushFields } from '../capture/controller';
+import { CAPTURE_DOCK_PX } from '../capture/panel';
 import { KlAppImportHandler } from './kl-app-import-handler';
 import { LayersUi } from '../klecks/ui/tool-tabs/layers-ui/layers-ui';
 import { TCss, TVector2D } from '../bb/bb-types';
@@ -216,7 +219,7 @@ export class KlApp {
                     });
                 }
                 this.toolspace.style.display = 'block';
-                this.easel.setSize(Math.max(0, this.uiWidth - this.toolWidth), this.uiHeight);
+                this.easel.setSize(Math.max(0, this.uiWidth - this.toolWidth), Math.max(0, this.uiHeight - CAPTURE_DOCK_PX));
                 this.statusOverlay.setWide(false);
             } else {
                 if (this.uiLayout === 'left') {
@@ -229,7 +232,7 @@ export class KlApp {
                     });
                 }
                 this.toolspace.style.display = 'none';
-                this.easel.setSize(Math.max(0, this.uiWidth), this.uiHeight);
+                this.easel.setSize(Math.max(0, this.uiWidth), Math.max(0, this.uiHeight - CAPTURE_DOCK_PX));
                 this.statusOverlay.setWide(true);
             }
         } else {
@@ -241,7 +244,7 @@ export class KlApp {
                 });
             }
             this.toolspace.style.display = 'block';
-            this.easel.setSize(Math.max(0, this.uiWidth - this.toolWidth), this.uiHeight);
+            this.easel.setSize(Math.max(0, this.uiWidth - this.toolWidth), Math.max(0, this.uiHeight - CAPTURE_DOCK_PX));
             this.statusOverlay.setWide(false);
         }
         this.mobileUi.update();
@@ -428,6 +431,114 @@ export class KlApp {
             },
         });
 
+        let stabilizerUi = 1;
+        let capturePaused = false;
+        let captureReplay = false;
+        const captureHistoryKinds: ('undo' | 'redo')[] = [];
+        const capture = new CaptureController({
+            getDrawParams: () => {
+                const layer = this.klCanvas.getLayer(currentLayerIndex);
+                const brush = currentBrushUi?.getBrush?.() ?? null;
+                return {
+                    tool: this.easel?.getTool?.() ?? 'unknown',
+                    brushId: currentBrushId ?? null,
+                    color: this.klColorSlider?.getColor?.() ?? null,
+                    size: currentBrushUi ? brushSettingService.getSize() : null,
+                    opacity: currentBrushUi ? brushSettingService.getOpacity() : null,
+                    stabilizerUi,
+                    stabilizerBlend: translateSmoothing(stabilizerUi),
+                    layerId: layer?.id ?? null,
+                    layerName: layer?.name ?? null,
+                    brushFields: readPlainBrushFields(brush),
+                };
+            },
+            getTransform: () => this.easel?.getTransform?.() ?? null,
+            getCanvasSize: () => ({
+                width: this.klCanvas.getWidth(),
+                height: this.klCanvas.getHeight(),
+            }),
+            getLayers: () =>
+                this.klCanvas.getLayers().map((layer) => ({
+                    id: layer.id,
+                    name: layer.name,
+                    opacity: layer.opacity,
+                    isVisible: layer.isVisible,
+                    mixModeStr: layer.mixModeStr,
+                    index: layer.index,
+                    canvas: layer.canvas,
+                })),
+            getHistorySummary: () => {
+                const entry = this.klHistory.getEntries().at(-1);
+                if (!entry) {
+                    return null;
+                }
+                return {
+                    keys: Object.keys(entry.data),
+                    layerIds: entry.data.layerMap ? Object.keys(entry.data.layerMap) : [],
+                    memoryEstimateBytes: entry.memoryEstimateBytes,
+                };
+            },
+            setPaused: (paused) => {
+                capturePaused = paused;
+                this.easel?.setIsFrozen(KL.DIALOG_COUNTER.get() > 0 || capturePaused || captureReplay);
+            },
+            setReplayLocked: (locked) => {
+                captureReplay = locked;
+                this.easel?.setIsFrozen(KL.DIALOG_COUNTER.get() > 0 || capturePaused || captureReplay);
+            },
+            setReplayImage: (image) => {
+                this.easel?.setReplayImage(image);
+            },
+            setTransform: (transform) => {
+                this.easel?.setTransform(transform);
+            },
+            restoreProject: (state) => {
+                const paint = (source: CanvasImageSource) => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = state.width;
+                    canvas.height = state.height;
+                    canvas.getContext('2d')?.drawImage(source, 0, 0, state.width, state.height);
+                    return canvas;
+                };
+                if (state.layers?.length) {
+                    this.klCanvas.reset({
+                        width: state.width,
+                        height: state.height,
+                        asHistoryRoot: true,
+                        layers: state.layers.map((layer) => ({
+                            id: layer.id,
+                            name: layer.name,
+                            opacity: layer.opacity,
+                            isVisible: layer.isVisible,
+                            mixModeStr: layer.mixModeStr as TMixMode,
+                            hasClipping: false,
+                            image: paint(layer.image),
+                        })),
+                    });
+                } else if (state.flat) {
+                    this.klCanvas.reset({
+                        width: state.width,
+                        height: state.height,
+                        asHistoryRoot: true,
+                        image: paint(state.flat),
+                        layerName: '续画',
+                    });
+                }
+                this.easel?.setReplayImage(null);
+                this.easel?.requestRender();
+            },
+            clearProject: () => {
+                const width = this.klCanvas.getWidth() || 800;
+                const height = this.klCanvas.getHeight() || 600;
+                this.klCanvas.reset({
+                    width,
+                    height,
+                    asHistoryRoot: true,
+                });
+                this.easel?.setReplayImage(null);
+                this.easel?.requestRender();
+            },
+        });
         const lineSmoothing = new LineSmoothing({
             smoothing: translateSmoothing(1),
         });
@@ -440,21 +551,25 @@ export class KlApp {
         drawEventChain.setChainOut(((event: TDrawEvent) => {
             if (event.type === 'down') {
                 this.toolspace.style.pointerEvents = 'none';
+                capture.onPostStabilizer(event);
                 currentBrushUi.startLine(event.x, event.y, event.pressure);
                 this.easelBrush.setLastDrawEvent({ x: event.x, y: event.y });
                 this.easel.requestRender();
             }
             if (event.type === 'move') {
+                capture.onPostStabilizer(event);
                 currentBrushUi.goLine(event.x, event.y, event.pressure, event.isCoalesced);
                 this.easelBrush.setLastDrawEvent({ x: event.x, y: event.y });
                 this.easel.requestRender();
             }
             if (event.type === 'up') {
                 this.toolspace.style.pointerEvents = '';
+                capture.onPostStabilizer(event);
                 currentBrushUi.endLine();
                 this.easel.requestRender();
             }
             if (event.type === 'line') {
+                capture.onPostStabilizer(event);
                 currentBrushUi.getBrush().drawLineSegment(event.x0, event.y0, event.x1, event.y1);
                 this.easelBrush.setLastDrawEvent({ x: event.x1, y: event.y1 });
                 this.easel.requestRender();
@@ -531,6 +646,7 @@ export class KlApp {
                 // didn't do anything
                 return;
             }
+            captureHistoryKinds.push('undo');
             propagateUndoRedoChanges(result.type, composedBefore);
             if (showMessage) {
                 this.statusOverlay.out(LANG('undo'), true);
@@ -544,6 +660,7 @@ export class KlApp {
                 // didn't do anything
                 return;
             }
+            captureHistoryKinds.push('redo');
             propagateUndoRedoChanges(result.type, composedBefore);
             if (showMessage) {
                 this.statusOverlay.out(LANG('redo'), true);
@@ -589,6 +706,7 @@ export class KlApp {
 
         this.easelBrush = new EaselBrush({
             radius: 5,
+            onCapture: (sample) => capture.onPreStabilizer(sample),
             onLineStart: (e) => {
                 // expects TDrawEvent
                 drawEventChain.chainIn({
@@ -815,10 +933,12 @@ export class KlApp {
         });
         this.klHistory.addListener(() => {
             this.easelProjectUpdater.update();
+            capture.onHistory(captureHistoryKinds.shift() ?? 'push');
         });
-        KL.DIALOG_COUNTER.subscribe((count) => {
-            this.easel.setIsFrozen(count > 0);
+        KL.DIALOG_COUNTER.subscribe(() => {
+            this.easel.setIsFrozen(KL.DIALOG_COUNTER.get() > 0 || capturePaused || captureReplay);
         });
+        this.easel.setIsFrozen(KL.DIALOG_COUNTER.get() > 0 || capturePaused || captureReplay);
 
         const updateMainTabVisibility = () => {
             if (!mainTabRow) {
@@ -1120,7 +1240,7 @@ export class KlApp {
                 position: 'absolute',
                 right: 0,
                 top: 0,
-                bottom: 0,
+                bottom: CAPTURE_DOCK_PX,
                 width: this.toolWidth,
                 overflow: 'hidden',
                 userSelect: 'none',
@@ -1426,6 +1546,7 @@ export class KlApp {
         const toolspaceStabilizerRow = new KL.ToolspaceStabilizerRow({
             smoothing: 1,
             onSelect: (v) => {
+                stabilizerUi = v;
                 lineSmoothing.setSmoothing(translateSmoothing(v));
             },
         });

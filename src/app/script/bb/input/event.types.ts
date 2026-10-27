@@ -33,11 +33,16 @@ export type TPointerEvent = {
         dX: number;
         dY: number;
         time: number; // same timescale as performance.now() - might be exact same number as in parent
+        pressureRaw?: number;
     }[];
     time: number; // same timescale as performance.now()
 
     button?: TPointerButton;
     pressure?: number; // float [0,1] always 1 for touch and mouse
+    // DOM pressure before Klecks remaps mouse/touch stand-ins. Absent on legacy mouse fallback.
+    pressureRaw?: number;
+    // Why a pointerup was synthesized. Drawing ignores this.
+    endedBy?: 'up' | 'cancel' | 'leave';
     downPageX?: number; // where was pointer when down-event occurred - set for down|move|up
     downPageY?: number;
 

@@ -54,6 +54,7 @@ type TCoalescedPointerEvent = {
     movementY: number;
     timeStamp: number;
     pressure: number;
+    pressureRaw?: number;
 };
 
 type TCorrectedPointerEvent = {
@@ -71,6 +72,7 @@ type TCorrectedPointerEvent = {
     movementY: number;
     timeStamp: number;
     pressure: number; // normalized
+    pressureRaw?: number;
     buttons: number;
     button: number;
     coalescedArr: TCoalescedPointerEvent[];
@@ -182,6 +184,7 @@ function correctPointerEvent(
         movementY: event.movementY,
         timeStamp: event.timeStamp + timeStampOffset,
         pressure: pressureNormalizer.normalize(event.pressure, event.type, event.pointerType),
+        pressureRaw: typeof event.pressure === 'number' ? event.pressure : undefined,
         buttons: determineButtons(),
         button: event.button,
         coalescedArr: [],
@@ -258,6 +261,7 @@ function correctPointerEvent(
                 customPressure === null
                     ? pressureNormalizer.normalize(eventItem.pressure)
                     : customPressure,
+            pressureRaw: typeof eventItem.pressure === 'number' ? eventItem.pressure : undefined,
         });
 
         pointerObj.lastPageX = eventItem.pageX;
@@ -316,7 +320,8 @@ export class PointerListener {
     private readonly onTouchMoveScribbleFix: ((e: TouchEvent) => void) | undefined;
     private readonly windowOnPointerMove: ((event: PointerEvent) => void) | undefined;
     private readonly windowOnPointerUp: ((event: PointerEvent) => void) | undefined;
-    private readonly windowOnPointerLeave: ((event: PointerEvent) => void) | undefined;
+    private readonly windowOnPointerLeave: ((event: PointerEvent, endedBy?: 'cancel' | 'leave') => void) | undefined;
+    private readonly windowOnPointerCancel: ((event: PointerEvent) => void) | undefined;
     // fallback pre pointer events (iOS < 13, as of 2023-02, still 4.4% of iOS users)
     private readonly onTouchStart: ((e: TouchEvent) => void) | undefined;
     private readonly onTouchMove: ((e: TouchEvent) => void) | undefined;
@@ -372,6 +377,7 @@ export class PointerListener {
             dX: correctedEvent.movementX,
             dY: correctedEvent.movementY,
             time: correctedEvent.timeStamp,
+            pressureRaw: correctedEvent.pressureRaw,
             eventPreventDefault: correctedEvent.eventPreventDefault,
             eventStopPropagation: correctedEvent.eventStopPropagation,
             ...custom,
@@ -397,6 +403,7 @@ export class PointerListener {
                         dX: coalescedItem.movementX,
                         dY: coalescedItem.movementY,
                         time: coalescedItem.timeStamp,
+                        pressureRaw: coalescedItem.pressureRaw,
                     });
                 }
             }
@@ -410,8 +417,8 @@ export class PointerListener {
             document.addEventListener(pointerMoveEvt, this.windowOnPointerMove, OPTIONS_PASSIVE);
         this.windowOnPointerUp &&
             document.addEventListener(pointerUpEvt, this.windowOnPointerUp, OPTIONS_PASSIVE);
-        this.windowOnPointerLeave &&
-            document.addEventListener(pointerCancelEvt, this.windowOnPointerLeave, OPTIONS_PASSIVE);
+        this.windowOnPointerCancel &&
+            document.addEventListener(pointerCancelEvt, this.windowOnPointerCancel, OPTIONS_PASSIVE);
         this.windowOnPointerLeave &&
             document.addEventListener(pointerLeaveEvt, this.windowOnPointerLeave, OPTIONS_PASSIVE);
     }
@@ -421,8 +428,8 @@ export class PointerListener {
             document.removeEventListener(pointerMoveEvt, this.windowOnPointerMove);
         this.windowOnPointerUp &&
             document.removeEventListener(pointerUpEvt, this.windowOnPointerUp);
-        this.windowOnPointerLeave &&
-            document.removeEventListener(pointerCancelEvt, this.windowOnPointerLeave);
+        this.windowOnPointerCancel &&
+            document.removeEventListener(pointerCancelEvt, this.windowOnPointerCancel);
         this.windowOnPointerLeave &&
             document.removeEventListener(pointerLeaveEvt, this.windowOnPointerLeave);
     }
@@ -560,6 +567,7 @@ export class PointerListener {
                     const outEvent = this.createPointerOutEvent('pointerup', correctedEvent, {
                         downPageX: dragObj.downPageX,
                         downPageY: dragObj.downPageY,
+                        endedBy: 'up',
                     });
                     this.onPointerCallback?.(outEvent);
                     return;
@@ -611,11 +619,12 @@ export class PointerListener {
                 const outEvent = this.createPointerOutEvent('pointerup', correctedEvent, {
                     downPageX: dragObj.downPageX,
                     downPageY: dragObj.downPageY,
+                    endedBy: 'up',
                 });
                 this.onPointerCallback?.(outEvent);
             };
 
-            this.windowOnPointerLeave = (event: PointerEvent) => {
+            this.windowOnPointerLeave = (event: PointerEvent, endedBy: 'cancel' | 'leave' = 'leave') => {
                 //BB.throwOut('pointerleave ' + event.pointerId);
                 const correctedEvent = correctPointerEvent(event);
                 ////console.log('debug: ' + event.pointerId + ' onGlobalPointerLeave', event);
@@ -637,8 +646,12 @@ export class PointerListener {
                 const outEvent = this.createPointerOutEvent('pointerup', correctedEvent, {
                     downPageX: dragObj.downPageX,
                     downPageY: dragObj.downPageY,
+                    endedBy,
                 });
                 this.onPointerCallback?.(outEvent);
+            };
+            this.windowOnPointerCancel = (event: PointerEvent) => {
+                this.windowOnPointerLeave?.(event, 'cancel');
             };
 
             this.targetElement.addEventListener(

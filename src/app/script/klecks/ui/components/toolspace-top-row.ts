@@ -5,7 +5,6 @@ import { LANG } from '../../../language/language';
 import { PointerListener } from '../../../bb/input/pointer-listener';
 import { css } from '../../../bb/base/base';
 
-const newImageImg = getIconUrl('new-image');
 const importImg = getIconUrl('import');
 const exportImg = getIconUrl('export');
 const shareImg = getIconUrl('share');
@@ -96,13 +95,6 @@ export class ToolspaceTopRow {
         css(logoButton.el, {
             width: 46,
         });
-        const newButton = createButton({
-            onClick: p.onNew,
-            title: LANG('file-new'),
-            image: newImageImg,
-            extraPadding: 1,
-            contain: true,
-        });
         const importButton = createButton({
             onClick: p.onImport,
             title: LANG('file-import'),
@@ -142,7 +134,6 @@ export class ToolspaceTopRow {
 
         BB.append(this.rootEl, [
             logoButton.el,
-            newButton.el,
             importButton.el,
             saveButton.el,
             shareButton ? shareButton.el : undefined,

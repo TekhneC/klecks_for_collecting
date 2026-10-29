@@ -1,6 +1,8 @@
 import { TDrawEvent } from '../klecks/kl-types';
 import { TViewportTransform } from '../klecks/ui/project-viewport/project-viewport';
 import { TEaselBrushCapture } from '../klecks/ui/easel/tools/easel-brush';
+import { isAdminPassword, passwordHash, randomSalt } from './admin-lock';
+import { describeCollection, groupWorksByAuthor } from './catalog';
 import { CanvasReplay, buildFilm } from './replay';
 import {
     CAPTURE_CODE_VERSION,
@@ -147,6 +149,8 @@ export class CaptureController {
     private suppressHistory = false;
     private worksBackfilled = false;
     private replayHold = false;
+    private readonly adminMode = new URLSearchParams(location.search).has('admin');
+    private adminUnlocked = false;
 
     constructor(private readonly host: CaptureHost) {
         this.performanceOriginWall = Date.now() - performance.now();
@@ -179,6 +183,20 @@ export class CaptureController {
             writeForm: (work) => {
                 this.work = work;
             },
+            onEditWorkInfo: () => this.editWorkInfo(),
+            onSaveWorkInfo: () => this.saveWorkInfo(),
+            onCancelWorkInfo: () => this.cancelWorkInfo(),
+            onCatalogWork: (workId) => void this.openCatalogWork(workId),
+            onAdminPassword: (password, confirmPassword, setting) => {
+                void this.submitAdminPassword(password, confirmPassword, setting);
+            },
+            onChangeAdminPassword: (currentPassword, nextPassword, confirmPassword) => {
+                void this.changeAdminPassword(currentPassword, nextPassword, confirmPassword);
+            },
+            onDeleteWork: (workId) => void this.deleteCatalogWork(workId),
+            onDeleteAuthor: (authorId) => void this.deleteCatalogAuthor(authorId),
+            onWatchCatalog: (workId) => void this.watchCatalogWork(workId),
+            onExitAdminReplay: () => this.exitAdminReplay(),
         });
         this.flushTimer = setInterval(() => {
             if (this.clock.status === 'recording' || this.clock.status === 'paused') {
@@ -204,6 +222,10 @@ export class CaptureController {
         this.render();
         this.syncCanvasLock();
         void this.refreshWorks();
+        if (this.adminMode) {
+            this.panel.hidePaintingForAdmin();
+            void this.promptAdminLock();
+        }
     }
 
     onPreStabilizer(sample: TEaselBrushCapture): void {
@@ -855,6 +877,186 @@ export class CaptureController {
         await this.resumePaint();
     }
 
+    private editWorkInfo(): void {
+        if (!this.work.workId) {
+            this.panel.setStatus('先进入一个作品，再修改作品信息。', 'error');
+            return;
+        }
+        this.panel.write(this.work);
+        this.panel.showWorkInfo();
+    }
+
+    private saveWorkInfo(): void {
+        this.panel.readInto(this.work);
+        if (!this.work.authorId.trim() || !this.work.workId.trim()) {
+            this.panel.setStatus('先进入一个作品，再修改作品信息。', 'error');
+            return;
+        }
+        const payload = {
+            type: 'meta',
+            work: { ...this.work },
+            at: new Date().toISOString(),
+            note: '更新作品信息。不切换作品，不结束本轮，不改变画布。',
+        };
+        if (this.sessionId) {
+            this.enqueue('session', payload);
+            void this.flush(true);
+        } else {
+            void this.store.putRecords([
+                {
+                    workId: this.work.workId,
+                    sessionId: '',
+                    channel: 'session',
+                    payload,
+                },
+            ]);
+        }
+        void this.rememberWork();
+        this.panel.setStatus('已更新作品信息。');
+    }
+
+    private cancelWorkInfo(): void {
+        this.panel.write(this.work);
+        this.panel.collapse();
+    }
+
+    private async promptAdminLock(): Promise<void> {
+        const stored = await this.store.getSetting('admin-password');
+        this.panel.showAdminLock(isAdminPassword(stored) ? 'enter' : 'set');
+    }
+
+    private async submitAdminPassword(password: string, confirmPassword: string, setting: boolean): Promise<void> {
+        const stored = await this.store.getSetting('admin-password');
+        if (setting || !isAdminPassword(stored)) {
+            if (!password || password !== confirmPassword) {
+                this.panel.setAdminLockError(password ? '两次密码不一致。' : '先填写密码。');
+                return;
+            }
+            const salt = randomSalt();
+            await this.store.putSetting('admin-password', { salt, hash: await passwordHash(password, salt) });
+            this.adminUnlocked = true;
+            await this.openCatalog();
+            return;
+        }
+        if ((await passwordHash(password, stored.salt)) !== stored.hash) {
+            this.panel.setAdminLockError('密码不正确。');
+            return;
+        }
+        this.adminUnlocked = true;
+        await this.openCatalog();
+    }
+
+    private async changeAdminPassword(currentPassword: string, nextPassword: string, confirmPassword: string): Promise<void> {
+        if (!this.adminUnlocked) {
+            return;
+        }
+        const stored = await this.store.getSetting('admin-password');
+        if (!isAdminPassword(stored) || (await passwordHash(currentPassword, stored.salt)) !== stored.hash) {
+            this.panel.setAdminNotice('当前密码不正确。');
+            return;
+        }
+        if (!nextPassword || nextPassword !== confirmPassword) {
+            this.panel.setAdminNotice(nextPassword ? '两次新密码不一致。' : '先填写新密码。');
+            return;
+        }
+        const salt = randomSalt();
+        await this.store.putSetting('admin-password', { salt, hash: await passwordHash(nextPassword, salt) });
+        this.panel.setAdminNotice('密码已更新。');
+    }
+
+    private async openCatalog(): Promise<void> {
+        if (!this.adminUnlocked) {
+            return;
+        }
+        const works = await this.store.listWorks();
+        this.panel.showCatalog(groupWorksByAuthor(works));
+    }
+
+    private async openCatalogWork(workId: string): Promise<void> {
+        if (!this.adminUnlocked) {
+            return;
+        }
+        const stored = (await this.store.listWorks()).find((work) => work.workId === workId);
+        if (!stored) {
+            return;
+        }
+        const records = await this.store.recordsForWork(workId);
+        this.panel.showCatalogDetail(workId, describeCollection(records, stored));
+        await this.watchCatalogWork(workId);
+    }
+
+    private async deleteCatalogWork(workId: string): Promise<void> {
+        if (!this.adminUnlocked) {
+            return;
+        }
+        const stored = (await this.store.listWorks()).find((work) => work.workId === workId);
+        const label = stored?.title || workId;
+        if (!window.confirm(`删除作品「${label}」？本机的收集记录和检查点会一起去掉。`)) {
+            return;
+        }
+        if (this.replayWorkId === workId) {
+            this.exitAdminReplay();
+        }
+        await this.store.deleteWork(workId);
+        if (this.work.workId === workId) {
+            this.work.workId = '';
+            this.sessionId = '';
+        }
+        await this.openCatalog();
+        this.panel.setAdminNotice(`已删除作品「${label}」。`);
+    }
+
+    private async deleteCatalogAuthor(authorId: string): Promise<void> {
+        if (!this.adminUnlocked) {
+            return;
+        }
+        const works = (await this.store.listWorks()).filter((work) => (work.authorId || '') === authorId);
+        const label = authorId || '未填写作者';
+        if (!window.confirm(`删除作者「${label}」及其 ${works.length} 件作品？本机的收集记录和检查点会一起去掉。`)) {
+            return;
+        }
+        for (const work of works) {
+            if (this.replayWorkId === work.workId) {
+                this.exitAdminReplay();
+            }
+            await this.store.deleteWork(work.workId);
+            if (this.work.workId === work.workId) {
+                this.work.workId = '';
+                this.sessionId = '';
+            }
+        }
+        await this.openCatalog();
+        this.panel.setAdminNotice(`已删除作者「${label}」。`);
+    }
+
+    private async watchCatalogWork(workId: string): Promise<void> {
+        if (!this.adminUnlocked) {
+            return;
+        }
+        const loaded = await this.loadFilm(workId);
+        if (!loaded || !this.player) {
+            this.playing = false;
+            this.replaying = false;
+            cancelAnimationFrame(this.replayFrame);
+            this.panel.hideAdminReplay('还没有可回放的过程。');
+            this.panel.setAdminNotice('还没有可回放的过程。');
+            return;
+        }
+        this.panel.showAdminReplay(this.player.canvas);
+        this.beginReplay();
+        this.seekReplay(0);
+        this.playing = true;
+        this.tickTime = performance.now();
+        cancelAnimationFrame(this.replayFrame);
+        this.replayFrame = requestAnimationFrame((time) => this.onTick(time));
+        this.render();
+    }
+
+    private exitAdminReplay(): void {
+        this.exitReplay();
+        this.panel.hideAdminReplay();
+    }
+
     private switchWork(): void {
         if (this.clock.status === 'recording' || this.clock.status === 'paused') {
             this.end();
@@ -1014,6 +1216,7 @@ export class CaptureController {
             works.map((work) => ({
                 workId: work.workId,
                 label: work.title || work.workId,
+                updatedAt: work.updatedAt,
             })),
             selectId,
         );
@@ -1261,7 +1464,7 @@ export class CaptureController {
     }
 
     private async play(): Promise<void> {
-        const workId = this.panel.getSelectedWorkId() || this.work.workId;
+        const workId = (this.adminMode && this.replayWorkId) || this.panel.getSelectedWorkId() || this.work.workId;
         if (!workId && !this.player) {
             this.panel.setStatus('还没有可回放的过程。', 'error');
             return;
@@ -1315,7 +1518,7 @@ export class CaptureController {
 
     private async seekFromUi(timeMs: number): Promise<void> {
         this.pauseReplay();
-        const workId = this.panel.getSelectedWorkId() || this.work.workId || this.replayWorkId;
+        const workId = (this.adminMode && this.replayWorkId) || this.panel.getSelectedWorkId() || this.work.workId || this.replayWorkId;
         if (!this.player && workId) {
             const loaded = await this.loadFilm(workId);
             if (!loaded) {
@@ -1332,10 +1535,13 @@ export class CaptureController {
     }
 
     private beginReplay(): void {
+        this.replaying = true;
+        if (this.adminMode) {
+            return;
+        }
         if (!this.savedTransform) {
             this.savedTransform = this.host.getTransform();
         }
-        this.replaying = true;
         this.host.setReplayLocked(true);
         this.syncCanvasLock();
     }
@@ -1346,6 +1552,11 @@ export class CaptureController {
         }
         this.replayTime = Math.max(0, Math.min(timeMs, this.player.duration));
         const view = this.player.seek(this.replayTime);
+        if (this.adminMode) {
+            this.panel.showAdminReplay(this.player.canvas);
+            this.render();
+            return;
+        }
         this.host.setReplayImage(this.player.canvas);
         if (view) {
             const key = JSON.stringify(view);

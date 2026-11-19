@@ -150,7 +150,6 @@ export class FloatingWindow {
                 visibility: this.doCenterInitially ? 'hidden' : undefined,
                 maxWidth: '100vw',
                 maxHeight: '100vh',
-                borderRadius: 4,
                 overflow: 'hidden',
             },
         });

@@ -3,13 +3,13 @@ import { BB } from '../../../bb/bb';
 import klecksLogoImg from 'url:/src/app/img/klecks-logo.png';
 import { LANG } from '../../../language/language';
 import { PointerListener } from '../../../bb/input/pointer-listener';
-import { css } from '../../../bb/base/base';
 
-const importImg = getIconUrl('import');
 const exportImg = getIconUrl('export');
-const shareImg = getIconUrl('share');
+const swapImg = getIconUrl('ui-swap-lr');
+
 /**
- * Topmost row of buttons in toolspace (with the app logo)
+ * Topmost header bar in toolspace (non-navigating brand badge + export, layout flip, help).
+ * Upstream ./home/, import, and system share buttons are hidden.
  */
 export class ToolspaceTopRow {
     private readonly rootEl: HTMLElement;
@@ -17,128 +17,114 @@ export class ToolspaceTopRow {
     // ----------------------------------- public -----------------------------------
     constructor(p: {
         logoImg?: string;
-        onLogo: () => void;
-        onNew: () => void;
-        onImport: () => void;
+        onLogo?: () => void;
+        onNew?: () => void;
+        onImport?: () => void;
         onSave: () => void;
-        onShare: () => void;
+        onShare?: () => void;
+        onLeftRight?: () => void;
         onHelp: () => void;
     }) {
         this.rootEl = BB.el({
-            className: 'kl-toolspace-row',
-            css: {
-                height: 36,
-                display: 'flex',
-            },
+            className: 'kl-toolspace-row kl-top-header',
         });
 
-        function createButton(p: {
+        const brandEl = BB.el({
+            className: 'kl-top-header__brand',
+            title: 'Klecks',
+        });
+        const brandIcon = BB.el({
+            className: 'dark-invert kl-top-header__logo',
+            id: 'kl-logo-button-im',
+            css: {
+                backgroundImage: "url('" + (p.logoImg ?? klecksLogoImg) + "')",
+            },
+        });
+        brandEl.append(brandIcon);
+
+        const actionsEl = BB.el({
+            className: 'kl-top-header__actions',
+        });
+
+        const createActionButton = (opts: {
             onClick: () => void;
             title: string;
             image?: string;
             content?: HTMLElement | SVGSVGElement;
-            contain: boolean;
-            extraPadding?: number;
-            darkInvert?: boolean;
-        }): {
-            el: HTMLElement;
-            pointerListener: PointerListener;
-        } {
-            const padding = 6 + (p.extraPadding ? p.extraPadding : 0);
+            label?: string;
+        }): HTMLElement => {
             const el = BB.el({
-                className: 'toolspace-row-button nohighlight',
-                title: p.title,
-                onClick: p.onClick,
-                css: {
-                    padding: p.contain ? padding + 'px 0' : '',
+                tagName: 'button',
+                className: 'kl-top-header__btn nohighlight',
+                title: opts.title,
+                onClick: opts.onClick,
+                props: {
+                    type: 'button',
+                    tabIndex: -1,
                 },
             });
-            if (p.content) {
-                el.append(p.content);
-            } else {
+            if (opts.content) {
+                el.append(opts.content);
+            } else if (opts.image) {
                 const im = BB.el({
-                    className: p.darkInvert ? 'dark-invert' : undefined,
-                    id: 'kl-logo-button-im',
+                    tagName: 'img',
+                    props: {
+                        src: opts.image,
+                        alt: '',
+                    },
                     css: {
-                        backgroundImage: "url('" + p.image + "')",
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'center',
-                        backgroundSize: p.contain ? 'contain' : '',
-                        //filter: 'grayscale(1)',
-                        height: '100%',
+                        width: 16,
+                        height: 16,
+                        pointerEvents: 'none',
                     },
                 });
-                im.style.pointerEvents = 'none';
                 el.append(im);
             }
-            const pointerListener = new BB.PointerListener({
-                // because :hover causes problems w touch
+            if (opts.label) {
+                el.append(
+                    BB.el({
+                        tagName: 'span',
+                        textContent: opts.label,
+                    }),
+                );
+            }
+            new BB.PointerListener({
                 target: el,
-                onEnterLeave: function (isOver) {
-                    el.classList.toggle('toolspace-row-button-hover', isOver);
+                onEnterLeave: (isOver) => {
+                    el.classList.toggle('kl-top-header__btn--hover', isOver);
                 },
             });
-            return {
-                el,
-                pointerListener,
-            };
-        }
+            return el;
+        };
 
-        const logoButton = createButton({
-            onClick: p.onLogo,
-            title: LANG('home'),
-            image: p.logoImg ?? klecksLogoImg,
-            contain: true,
-            darkInvert: true,
-        });
-        logoButton.el.classList.add('kl-tool-row-border-right');
-        css(logoButton.el, {
-            width: 46,
-        });
-        const importButton = createButton({
-            onClick: p.onImport,
-            title: LANG('file-import'),
-            image: importImg,
-            extraPadding: 1,
-            contain: true,
-        });
-        const saveButton = createButton({
+        const saveButton = createActionButton({
             onClick: p.onSave,
-            title: LANG('file-save'),
+            title: `${LANG('file-save')} [Ctrl+S]`,
             image: exportImg,
-            extraPadding: 1,
-            contain: true,
+            label: LANG('file-save'),
         });
+        actionsEl.append(saveButton);
 
-        let shareButton = null;
-        if (BB.canShareFiles()) {
-            shareButton = createButton({
-                onClick: p.onShare,
-                title: LANG('file-share'),
-                image: shareImg,
-                contain: true,
-                darkInvert: true,
+        if (p.onLeftRight) {
+            const swapButton = createActionButton({
+                onClick: p.onLeftRight,
+                title: LANG('switch-ui-left-right'),
+                image: swapImg,
             });
+            actionsEl.append(swapButton);
         }
-        const helpButton = createButton({
+
+        const helpButton = createActionButton({
             onClick: p.onHelp,
             title: LANG('help'),
             content: getIconSvg('help', {
-                width: 24,
-                height: 24,
-                margin: '0 auto',
+                width: 16,
+                height: 16,
             }),
-            contain: true,
         });
-        helpButton.el.style.flexBasis = '0';
+        actionsEl.append(helpButton);
 
-        BB.append(this.rootEl, [
-            logoButton.el,
-            importButton.el,
-            saveButton.el,
-            shareButton ? shareButton.el : undefined,
-            helpButton.el,
-        ]);
+        this.rootEl.append(brandEl, actionsEl);
     }
 
     setLogo(logoImg: string, isPixelated?: boolean, keepOriginalColors?: boolean): void {

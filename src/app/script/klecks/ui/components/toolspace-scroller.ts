@@ -2,6 +2,7 @@ import { BB } from '../../../bb/bb';
 import { LANG } from '../../../language/language';
 import { DIALOG_COUNTER } from '../modals/modal-count';
 import { css } from '../../../bb/base/base';
+import { CAPTURE_DOCK_PX } from '../../../capture/panel';
 
 /**
  * Scroll buttons at the top and bottom of toolspace
@@ -60,7 +61,7 @@ export class ToolspaceScroller {
             title: LANG('scroll'),
             className: 'kl-scroller',
             css: {
-                bottom: 0,
+                bottom: CAPTURE_DOCK_PX,
             },
         });
         this.updateUiState(p.uiState);

@@ -8,6 +8,7 @@ const animationDurationMs = 300;
 export class FloatingLayerPreview {
     private readonly rootEl: HTMLElement;
     private uiState: TUiLayout = 'right';
+    private toolWidth: number = 288;
     private timeout: ReturnType<typeof setTimeout> | undefined;
 
     // ----------------------- public -----------------------
@@ -66,14 +67,19 @@ export class FloatingLayerPreview {
 
         if (this.uiState === 'left') {
             css(this.rootEl, {
-                left: 280,
+                left: this.toolWidth + 9,
                 right: undefined,
             });
         } else {
             css(this.rootEl, {
                 left: undefined,
-                right: 280,
+                right: this.toolWidth + 9,
             });
         }
+    }
+
+    setToolWidth(width: number): void {
+        this.toolWidth = width;
+        this.setUiState(this.uiState);
     }
 }

@@ -142,6 +142,11 @@ export function textToolDialog(p: {
         viewportUI.setSize(w, h);
     };
     window.addEventListener('resize', onResize);
+    let resizeObserver: ResizeObserver | undefined;
+    if ('ResizeObserver' in window) {
+        resizeObserver = new ResizeObserver(() => onResize());
+        resizeObserver.observe(viewportWrapper);
+    }
     setTimeout(() => {
         onResize();
     });
@@ -158,6 +163,7 @@ export function textToolDialog(p: {
     const onModalExit = (val: string) => {
         window.removeEventListener('resize', onResize);
         window.removeEventListener('scroll', onScroll);
+        resizeObserver?.disconnect();
         viewportUI.destroy();
         fontUI.destroy();
         fillUI.destroy();
@@ -186,6 +192,7 @@ export function textToolDialog(p: {
             width: 'calc(100% - 50px)',
             maxWidth: 1000,
             minWidth: 300,
+            margin: 0,
             boxSizing: 'border-box',
         },
         clickOnEnter: 'Ok',

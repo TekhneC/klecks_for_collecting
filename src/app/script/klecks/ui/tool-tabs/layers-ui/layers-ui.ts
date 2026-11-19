@@ -31,6 +31,7 @@ type TLayerEl = HTMLElement & {
     posY: number;
     layerName: string;
     opacity: number;
+    hasClipping: boolean;
     pointerListener: PointerListener;
     opacitySlider: PointSlider;
     isSelected: boolean;
@@ -83,8 +84,9 @@ export class LayersUi {
     private readonly largeThumbCanvas: HTMLCanvasElement;
     private lastpos: number = 0;
 
-    private readonly layerHeight: number = 35;
-    private readonly layerSpacing: number = 0;
+    private readonly layerHeight: number = 36;
+    private readonly layerSpacing: number = 4;
+    private toolWidth: number = 288;
 
     private move(oldSpotIndex: number, newSpotIndex: number): void {
         if (isNaN(oldSpotIndex) || isNaN(newSpotIndex)) {
@@ -165,7 +167,11 @@ export class LayersUi {
     }
 
     private updateHeight(): void {
-        this.layerListEl.style.height = this.layerElArr.length * 35 + 'px';
+        const count = this.layerElArr.length;
+        this.layerListEl.style.height =
+            count > 0
+                ? count * (this.layerHeight + this.layerSpacing) - this.layerSpacing + 'px'
+                : '0px';
     }
 
     private createLayerList(force?: boolean): void {
@@ -189,7 +195,8 @@ export class LayersUi {
                 className: 'kl-layer',
             }) as HTMLElement as TLayerEl;
             this.layerElArr[index] = layer;
-            layer.posY = (this.klCanvasLayerArr.length - 1) * 35 - index * 35;
+            const step = this.layerHeight + this.layerSpacing;
+            layer.posY = (this.klCanvasLayerArr.length - 1) * step - index * step;
             css(layer, {
                 top: layer.posY,
             });
@@ -200,7 +207,7 @@ export class LayersUi {
 
             const container1 = BB.el();
             css(container1, {
-                width: 270,
+                width: '100%',
                 height: 34,
             });
             const container2 = BB.el();
@@ -208,6 +215,7 @@ export class LayersUi {
             innerLayer.append(container1, container2);
 
             layer.spot = index;
+            layer.hasClipping = hasClipping;
 
             //checkbox - visibility
             {
@@ -309,9 +317,9 @@ export class LayersUi {
                 css(layer.label, {
                     position: 'absolute',
                     left: 1 + 32 + 5 + paddingLeft + clippingOffset,
+                    right: 62,
                     top: 1,
                     fontSize: 13,
-                    width: 165 - clippingOffset,
                     height: 20,
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
@@ -333,7 +341,7 @@ export class LayersUi {
 
                 css(layer.opacityLabel, {
                     position: 'absolute',
-                    left: 250 - 1 - 5 - 50 - 5 + paddingLeft,
+                    right: 8,
                     top: 1,
                     fontSize: 13,
                     textAlign: 'right',
@@ -346,7 +354,7 @@ export class LayersUi {
             let oldOpacity: number;
             const opacitySlider = new PointSlider({
                 init: layer.opacity,
-                width: 200 - clippingOffset,
+                width: Math.max(120, this.toolWidth - 90) - clippingOffset,
                 pointSize: 14,
                 callback: (sliderValue, isFirst, isLast) => {
                     if (isFirst) {
@@ -458,11 +466,11 @@ export class LayersUi {
                             boxShadow: '1px 3px 5px rgba(0,0,0,0.4)',
                         });
                     }
+                    const maxY =
+                        (this.klCanvasLayerArr.length - 1) *
+                        (this.layerHeight + this.layerSpacing);
                     layer.posY += event.dY;
-                    const corrected = Math.max(
-                        0,
-                        Math.min((this.klCanvasLayerArr.length - 1) * 35, layer.posY),
-                    );
+                    const corrected = Math.max(0, Math.min(maxY, layer.posY));
                     layer.style.top = corrected + 'px';
                     this.updateLayersVerticalPosition(layer.spot, this.posToSpot(layer.posY));
                 }
@@ -476,10 +484,10 @@ export class LayersUi {
                             boxShadow: '',
                         });
                     }, 20);
-                    layer.posY = Math.max(
-                        0,
-                        Math.min((this.klCanvasLayerArr.length - 1) * 35, layer.posY),
-                    );
+                    const maxY =
+                        (this.klCanvasLayerArr.length - 1) *
+                        (this.layerHeight + this.layerSpacing);
+                    layer.posY = Math.max(0, Math.min(maxY, layer.posY));
                     layer.style.zIndex = '';
                     const newSpot = this.posToSpot(layer.posY);
                     const oldSpot = layer.spot;
@@ -550,9 +558,8 @@ export class LayersUi {
         this.onClearLayer = p.onClearLayer;
 
         this.layerElArr = [];
-        this.layerHeight = 35;
-        this.layerSpacing = 0;
-        const width = 270;
+        this.layerHeight = 36;
+        this.layerSpacing = 4;
 
         this.largeThumbCanvas = BB.canvas();
 
@@ -572,7 +579,7 @@ export class LayersUi {
 
         const listDiv = BB.el({
             css: {
-                width: width,
+                width: 'calc(100% + 20px)',
                 position: 'relative',
                 margin: '0 -10px',
                 zIndex: 0,
@@ -877,5 +884,16 @@ export class LayersUi {
         }
         this.isVisible = b;
         this.rootEl.style.display = b ? 'block' : 'none';
+    }
+
+    setToolWidth(toolWidth: number): void {
+        if (this.toolWidth === toolWidth) {
+            return;
+        }
+        this.toolWidth = toolWidth;
+        const sliderBaseWidth = Math.max(120, toolWidth - 90);
+        for (const layer of this.layerElArr) {
+            layer.opacitySlider.setWidth(sliderBaseWidth - (layer.hasClipping ? 15 : 0));
+        }
     }
 }

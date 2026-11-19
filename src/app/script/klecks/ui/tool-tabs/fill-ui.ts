@@ -28,8 +28,9 @@ export class FillUi {
         colorSlider: KlColorSlider; // when opening tab, inserts it (snatches it from where else it was)
     }) {
         this.rootEl = BB.el({
+            className: 'kl-panel-card',
             css: {
-                margin: '10px 10px 0',
+                margin: '8px 8px 0',
             },
         });
         this.isVisible = true;
@@ -37,6 +38,9 @@ export class FillUi {
         this.colorDiv = BB.el({
             parent: this.rootEl,
             css: {
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px 0',
                 marginBottom: 10,
             },
         });

@@ -336,31 +336,12 @@ This has been reported to Google.
                 },
                 css: {
                     lineHeight: '20px',
+                    width: 'calc(100% - 20px)',
                 },
             });
 
-            const pasteBtn = BB.el({
-                tagName: 'button',
-                className: 'kl-button grid-button grid-button--filter',
-                content: [
-                    BB.el({
-                        css: {
-                            height: 20,
-                            float: 'left',
-                        },
-                    }),
-                    LANG('file-paste'),
-                ],
-                props: {
-                    tabIndex: -1,
-                },
-                css: {
-                    lineHeight: '20px',
-                },
-                onClick: () => this.onPaste(),
-            });
-
-            this.rootEl.append(copyBtn, pasteBtn, BB.el({ className: 'grid-hr' }));
+            // External clipboard paste is disabled in capture mode.
+            this.rootEl.append(copyBtn, BB.el({ className: 'grid-hr' }));
         }
         addGroup(groupA);
         this.rootEl.append(BB.el({ className: 'grid-hr' }));
@@ -389,7 +370,13 @@ This has been reported to Google.
         this.onCopyToClipboard = p.onCopyToClipboard;
         this.onPaste = p.onPaste;
 
-        this.rootEl = BB.el();
+        this.rootEl = BB.el({
+            className: 'kl-panel-card',
+            css: {
+                margin: '8px 8px 0',
+                padding: '0 0 10px',
+            },
+        });
     }
 
     getElement(): HTMLElement {

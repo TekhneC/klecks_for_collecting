@@ -248,21 +248,8 @@ export class LayerPreview {
                 whiteSpace: 'nowrap',
             },
         });
-        const clickableEl = BB.el({
-            css: {
-                // background: 'rgba(0,255,0,0.6)',
-                position: 'absolute',
-                left: 10,
-                top: 0,
-                width: 90,
-                height: '100%',
-            },
-        });
 
-        this.clippingIconEl.addEventListener('click', () => p.onClick(), { passive: false });
-        clickableEl.addEventListener('click', () => p.onClick(), { passive: false });
-        this.canvas.addEventListener('click', () => p.onClick(), { passive: false });
-        checkWrapper.addEventListener('click', () => p.onClick(), { passive: false });
+        this.rootEl.addEventListener('click', () => p.onClick(), { passive: false });
 
         this.opacityEl = BB.el({
             content: LANG('opacity') + '<br>100%',
@@ -277,7 +264,7 @@ export class LayerPreview {
         this.largeCanvasCtx = BB.ctx(this.largeCanvas);
 
         this.canvasWrapperEl.append(this.canvas);
-        nameWrapper.append(this.nameLabelEl, clickableEl);
+        nameWrapper.append(this.nameLabelEl);
         this.contentWrapperEl.append(checkWrapper, this.canvasWrapperEl, nameWrapper, this.opacityEl);
         this.rootEl.append(this.contentWrapperEl);
 
@@ -333,8 +320,8 @@ export class LayerPreview {
             return;
         }
         this.isPreviewVisible = b;
+        this.rootEl.style.display = this.isPreviewVisible ? '' : 'none';
         this.contentWrapperEl.style.display = this.isPreviewVisible ? 'flex' : 'none';
-        this.rootEl.style.marginBottom = this.isPreviewVisible ? '' : '10px';
         this.draw();
     }
 

@@ -6,7 +6,6 @@ import { TKlProject } from '../../kl-types';
 import { KlHistory } from '../../history/kl-history';
 import { LocalStorage } from '../../../bb/base/local-storage';
 import * as classes from './save-reminder.module.scss';
-import { BrowserStorageUi } from './browser-storage-ui';
 import { showModal } from '../modals/base/show-modal';
 import { Destroyer } from '../../../bb/base/base';
 
@@ -19,12 +18,12 @@ const UNSAVED_ACTIONS_LIMIT = DEBUG_UNSAVED_ACTIONS_LIMIT ?? 100;
 const LS_REMINDER_KEY = 'kl-save-reminder';
 
 export type TSaveReminderParams = {
-    helpPath: string;
+    helpPath?: string;
     onSaveAsPsd: () => void;
     isDrawing: () => boolean;
-    projectStore: ProjectStore; // needed if showReminder
-    getProject: () => TKlProject; // needed if showReminder
-    onStored: () => void;
+    projectStore?: ProjectStore;
+    getProject?: () => TKlProject;
+    onStored?: () => void;
     applyUncommitted: () => void;
     klHistory: KlHistory;
 };
@@ -35,11 +34,7 @@ export type TSaveReminderParams = {
 export class SaveReminder {
     private readonly onSaveAsPsd: () => void;
     private readonly isDrawing: () => boolean;
-    private readonly projectStore: ProjectStore;
-    private readonly getProject: () => TKlProject;
-    private readonly onStored: () => void;
     private readonly applyUncommitted: () => void;
-    private readonly helpPath: string;
     private klHistory: KlHistory = {} as KlHistory;
 
     private setting: TSaveReminderSetting;
@@ -69,14 +64,7 @@ export class SaveReminder {
         const psdWrapper = BB.el({
             className: classes.psdWrapper,
         });
-        const storageWrapper = BB.el({
-            css: {
-                margin: '0 -20px',
-                padding: 20,
-                paddingBottom: 0,
-            },
-        });
-        contentEl.append(psdWrapper, storageWrapper);
+        contentEl.append(psdWrapper);
 
         const destroyer = new Destroyer();
         const psdBtn = BB.el({
@@ -100,27 +88,12 @@ export class SaveReminder {
             }),
         );
 
-        const storageUi = new BrowserStorageUi({
-            helpPath: this.helpPath,
-            projectStore: this.projectStore,
-            getProject: this.getProject,
-            applyUncommitted: this.applyUncommitted,
-            options: {
-                hideClearButton: true,
-                isFocusable: true,
-            },
-            onStored: () => this.onStored(),
-        });
-        storageUi.show();
-        storageWrapper.append(storageUi.getElement());
-
         showModal({
             type: 'warning',
             message: `<b>${LANG('save-reminder-title')}</b>`,
             div: contentEl,
             ignoreBackground: true,
             callback: () => {
-                storageUi.destroy();
                 destroyer.destroy();
                 this.closeFunc = undefined;
                 this.lastReminderShownAt = performance.now();
@@ -136,12 +109,8 @@ export class SaveReminder {
 
     // ----------------------------------- public -----------------------------------
     constructor(p: TSaveReminderParams) {
-        this.helpPath = p.helpPath;
         this.onSaveAsPsd = p.onSaveAsPsd;
         this.isDrawing = p.isDrawing;
-        this.projectStore = p.projectStore;
-        this.getProject = p.getProject;
-        this.onStored = p.onStored;
         this.applyUncommitted = p.applyUncommitted;
         this.klHistory = p.klHistory;
 

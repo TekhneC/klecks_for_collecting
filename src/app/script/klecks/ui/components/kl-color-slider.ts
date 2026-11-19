@@ -29,8 +29,9 @@ export class KlColorSlider {
     private readonly onEyedropper: (b: boolean) => void;
     private isPicking: boolean;
     private readonly pickerButton: HTMLElement;
-    private readonly width: number;
+    private width: number;
     private readonly height: number; // hue slider and output height
+    private readonly divH: HTMLElement;
     private hexColorWindow: HexColorWindow | undefined;
     private hexColorWindowPosition: TVector2D | undefined;
 
@@ -154,7 +155,7 @@ export class KlColorSlider {
 
         svWrapper.append(this.svGradient);
 
-        const divH = BB.el({
+        const divH = (this.divH = BB.el({
             className: 'kl-color-picker__h',
             css: {
                 overflow: 'hidden',
@@ -165,7 +166,7 @@ export class KlColorSlider {
                 marginTop: 1,
                 marginBottom: 1,
             },
-        });
+        }));
         this.divPreview = BB.el({
             className: 'kl-color-picker__preview',
             css: {
@@ -183,6 +184,8 @@ export class KlColorSlider {
                 position: 'absolute',
                 left: 0,
                 top: 0,
+                width: '100%',
+                height: '100%',
                 display: 'none',
                 pointerEvents: 'none',
             });
@@ -535,6 +538,21 @@ export class KlColorSlider {
         };
         css(this.rootEl, style);
         css(this.outputDiv, style);
+    }
+
+    setWidth(w: number): void {
+        w = Math.max(120, Math.round(w));
+        if (w === this.width) {
+            return;
+        }
+        this.width = w;
+        this.rootEl.style.width = w + 'px';
+        this.SVContainer.style.width = w + 'px';
+        this.svGradient.style.width = w + 'px';
+        this.divH.style.width = w + 'px';
+        this.controlH.style.left =
+            Math.round((this.primaryColorHsv.h / 359.99) * this.width) - 1 + 'px';
+        this.updateSVPointer();
     }
 
     setHeight(h: number): void {

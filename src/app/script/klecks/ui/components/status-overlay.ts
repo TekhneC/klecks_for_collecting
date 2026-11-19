@@ -15,14 +15,15 @@ export class StatusOverlay {
     private readonly innerInnerEl: HTMLDivElement;
     private isWide: boolean = false; // tool space hidden
     private uiState: TUiState = 'right';
+    private toolWidth: number = 288;
 
     private timeout: ReturnType<typeof setTimeout> | undefined;
     private timeout2: ReturnType<typeof setTimeout> | undefined;
     private timeout3: ReturnType<typeof setTimeout> | undefined;
 
     private updateUiState() {
-        if (this.uiState === 'left') {
-            this.el.style.left = '271px';
+        if (this.uiState === 'left' && !this.isWide) {
+            this.el.style.left = `${this.toolWidth}px`;
         } else {
             this.el.style.removeProperty('left');
         }
@@ -73,8 +74,13 @@ export class StatusOverlay {
             this.el.style.left = '';
         } else {
             this.el.style.removeProperty('width');
-            this.el.style.left = this.uiState === 'left' ? '271px' : '';
+            this.el.style.left = this.uiState === 'left' ? `${this.toolWidth}px` : '';
         }
+    }
+
+    setToolWidth(width: number) {
+        this.toolWidth = width;
+        this.updateUiState();
     }
 
     setUiState(state: TUiState) {

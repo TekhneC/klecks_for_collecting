@@ -91,7 +91,7 @@ export class KlSlider {
         this.labelValueEl.textContent = displayValue + unit;
 
         const sliderValue = this.valueToSliderValue(this.value);
-        this.control.style.width = sliderValue * this.elementWidth + 'px';
+        this.control.style.width = sliderValue * 100 + '%';
     }
 
     private emit(isFinal: boolean): void {
@@ -232,6 +232,7 @@ export class KlSlider {
         }
 
         this.rootEl = BB.el({
+            className: 'kl-slider',
             css: {
                 display: 'flex',
             },
@@ -284,7 +285,7 @@ export class KlSlider {
                 position: 'absolute',
                 left: 0,
                 top: 0,
-                width: this.valueToSliderValue(this.value) * this.elementWidth,
+                width: this.valueToSliderValue(this.value) * 100 + '%',
                 height: this.elementHeight,
             },
         });
@@ -320,7 +321,8 @@ export class KlSlider {
                 this.sliderWrapperEl.className = 'slider-wrapper slider-wrapper--active';
 
                 if (event.button === 'left') {
-                    let sliderValue = event.relX / this.elementWidth;
+                    const currentWidth = this.sliderWrapperEl.clientWidth || this.elementWidth;
+                    let sliderValue = event.relX / currentWidth;
                     sliderValue = Math.max(0, Math.min(1, sliderValue));
                     this.value = this.sliderValueToValue(sliderValue);
                     this.updateLabel();
@@ -333,8 +335,9 @@ export class KlSlider {
                 let deltaX = event.dX;
                 const deltaY = Math.abs(event.pageY - (event.downPageY || 0));
                 const factor = calcSliderFalloffFactor(deltaY, event.button === 'right');
+                const currentWidth = this.sliderWrapperEl.clientWidth || this.elementWidth;
                 deltaX *= factor;
-                deltaX /= this.elementWidth;
+                deltaX /= currentWidth;
 
                 virtualVal += deltaX;
 

@@ -1,415 +1,287 @@
-import { getIconUrl } from '../../../icon/icon';
+import { getIconSvg, getIconUrl, IconName } from '../../../icon/icon';
 import { BB } from '../../../bb/bb';
-import { ToolDropdown } from './tool-dropdown';
 import { LANG } from '../../../language/language';
-import { PointerListener } from '../../../bb/input/pointer-listener';
 import { TToolType } from '../../kl-types';
-import { css } from '../../../bb/base/base';
 
 const toolHandImg = getIconUrl('tool-hand');
 const toolZoomInImg = getIconUrl('tool-zoom-in');
 const toolZoomOutImg = getIconUrl('tool-zoom-out');
 const toolUndoImg = getIconUrl('tool-undo');
-type TBaseToolRowButton = {
-    el: HTMLElement;
-};
+const viewportResetImg = getIconUrl('viewport-reset');
+const toolPaintImg = getIconUrl('tool-paint');
+const toolFillImg = getIconUrl('tool-fill');
+const toolGradientImg = getIconUrl('tool-gradient');
+const toolTextImg = getIconUrl('tool-text');
+const toolShapeImg = getIconUrl('tool-shape');
+const toolSelectImg = getIconUrl('tool-select');
 
-type TToolRowButton = TBaseToolRowButton & {
-    pointerListener: PointerListener;
-    setIsSmall: (b: boolean) => void;
-};
+type TToolSlotId = TToolType | 'eraser';
 
-type TToolRowTriangleButton = TBaseToolRowButton & {
-    setIsEnabledLeft: (b: boolean) => void;
-    setIsEnabledRight: (b: boolean) => void;
-    leftPointerListener: PointerListener;
-    rightPointerListener: PointerListener;
+type TToolGridItem = {
+    id: TToolSlotId;
+    el: HTMLButtonElement;
 };
 
 /**
- * Row of buttons in toolspace. image-operations (draw, hand), zoom, undo/redo
- * Need to do syncing. So tool is correct, and zoom/undo/redo buttons are properly enabled/disabled
- * heights: 54px tall, 36px small -> via setIsSmall
+ * Modern flat action bar (Undo/Redo, Zoom-/Fit/Zoom+) + direct 4x2 tool grid.
+ * Replaces the hidden ToolDropdown and diagonal SVG triangle buttons.
  */
 export class ToolspaceToolRow {
     private readonly rootEl: HTMLElement;
-    private readonly toolDropdown: ToolDropdown;
-    private readonly handButton: TToolRowButton;
-    private readonly zoomInButton: TToolRowButton;
-    private readonly zoomOutButton: TToolRowButton;
-    private readonly undoButton: TToolRowButton;
-    private readonly redoButton: TToolRowButton;
-    private readonly zoomInNOutButton: TToolRowTriangleButton;
-    private readonly undoNRedoButton: TToolRowTriangleButton;
-    private currentActiveStr: TToolType;
+    private readonly utilRowEl: HTMLElement;
+    private readonly gridEl: HTMLElement;
+    private readonly zoomInButton: HTMLButtonElement;
+    private readonly zoomOutButton: HTMLButtonElement;
+    private readonly fitButton: HTMLButtonElement | undefined;
+    private readonly undoButton: HTMLButtonElement;
+    private readonly redoButton: HTMLButtonElement;
+    private readonly toolButtons: TToolGridItem[] = [];
+    private currentActiveStr: TToolType = 'brush';
+    private isEraserActive: boolean = false;
     private readonly onActivate: (activeStr: TToolType) => void;
+    private readonly onActivateEraser?: () => void;
+
+    private syncActiveHighlight(): void {
+        const visualActive: TToolSlotId =
+            this.currentActiveStr === 'brush' && this.isEraserActive
+                ? 'eraser'
+                : this.currentActiveStr;
+        for (const item of this.toolButtons) {
+            const isActive = item.id === visualActive;
+            item.el.classList.toggle('kl-tool-grid__btn--active', isActive);
+            item.el.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        }
+    }
 
     // ----------------------------------- public -----------------------------------
 
     constructor(p: {
-        onActivate: (activeStr: TToolType) => void; // clicking on tool button - activating it
+        onActivate: (activeStr: TToolType) => void;
+        onActivateEraser?: () => void;
         onZoomIn: () => void;
         onZoomOut: () => void;
+        onFit?: () => void;
         onUndo: () => void;
         onRedo: () => void;
     }) {
-        this.rootEl = BB.el({
-            className: 'kl-toolspace-row',
-            css: {
-                height: 54,
-                display: 'flex',
-            },
-        });
-
         this.onActivate = p.onActivate;
-        this.currentActiveStr = 'brush';
+        this.onActivateEraser = p.onActivateEraser;
 
-        const createButton = (p: {
+        this.rootEl = BB.el({
+            className: 'kl-tool-dock',
+        });
+
+        this.utilRowEl = BB.el({
+            className: 'kl-tool-util-row',
+        });
+
+        const createUtilBtn = (opts: {
             onClick: () => void;
+            title: string;
             image: string;
-            contain: boolean;
-            doLighten?: boolean;
             doMirror?: boolean;
-        }): TToolRowButton => {
-            const smallMargin = p.doLighten ? '6px 0' : '8px 0';
-
-            const el = BB.el({
-                className: 'toolspace-row-button nohighlight',
-                //title: p.title,
-                onClick: p.onClick,
-                css: {
-                    padding: p.contain ? '10px 0' : '',
+            disabled?: boolean;
+        }): HTMLButtonElement => {
+            const btn = BB.el({
+                tagName: 'button',
+                className: 'kl-tool-util-btn nohighlight',
+                title: opts.title,
+                onClick: opts.onClick,
+                props: {
+                    type: 'button',
+                    tabIndex: -1,
                 },
-            });
+            }) as HTMLButtonElement;
             const im = BB.el({
-                className: 'dark-invert',
+                className: 'dark-invert kl-tool-util-btn__icon',
                 css: {
-                    backgroundImage: "url('" + p.image + "')",
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'center',
-                    backgroundSize: p.contain ? 'contain' : '',
-                    //filter: 'grayscale(1)',
-                    height: '100%',
-                    transform: p.doMirror ? 'scale(-1, 1)' : '',
-                    pointerEvents: 'none',
-                    opacity: p.doLighten ? 0.75 : 1,
+                    backgroundImage: "url('" + opts.image + "')",
+                    transform: opts.doMirror ? 'scale(-1, 1)' : '',
                 },
             });
-            el.append(im);
-            const pointerListener = new BB.PointerListener({
-                // because :hover causes problems w touch
-                target: el,
+            btn.append(im);
+            if (opts.disabled) {
+                btn.classList.add('toolspace-row-button-disabled');
+            }
+            new BB.PointerListener({
+                target: btn,
                 onEnterLeave: (isOver) => {
-                    el.classList.toggle('toolspace-row-button-hover', isOver);
+                    btn.classList.toggle('kl-tool-util-btn--hover', isOver);
                 },
             });
-            const setIsSmall = (b: boolean) => {
-                el.style.padding = p.contain ? (b ? smallMargin : '10px 0') : '';
-            };
-            return {
-                el,
-                pointerListener,
-                setIsSmall,
-            };
+            return btn;
         };
 
-        const createTriangleButton = (p: {
-            onLeft: () => void;
-            onRight: () => void;
-            leftImage: string;
-            rightImage: string | null;
-        }): TToolRowTriangleButton => {
-            // because IE and Edge don't support clip path
-
-            const result = BB.el({
-                css: {
-                    flexGrow: 1,
-                    position: 'relative',
-                },
-            });
-
-            const svg = BB.createSvg({
-                elementType: 'svg',
-                width: '67px', // can't think of a way doing with percentage
-                height: '54px',
-                viewBox: '0 0 100 100',
-                preserveAspectRatio: 'none',
-            });
-            css(svg, {
-                position: 'absolute',
-                left: 0,
-                top: 0,
-            });
-
-            const blurRadius = 10;
-            const blurOffsetX = 2;
-            const blurOffsetY = 2;
-
-            const defs = BB.createSvg({
-                // inset shadow via svg
-                elementType: 'defs',
-                childrenArr: [
-                    {
-                        elementType: 'filter',
-                        id: 'innershadow',
-                        x0: '-50%',
-                        y0: '-50%',
-                        width: '200%',
-                        height: '200%',
-                        childrenArr: [
-                            {
-                                elementType: 'feGaussianBlur',
-                                in: 'SourceAlpha',
-                                stdDeviation: '' + blurRadius,
-                                result: 'blur',
-                            },
-                            {
-                                elementType: 'feOffset',
-                                dx: '' + blurOffsetX,
-                                dy: '' + blurOffsetY,
-                            },
-                            {
-                                elementType: 'feComposite',
-                                in2: 'SourceAlpha',
-                                operator: 'arithmetic',
-                                k2: '-1',
-                                k3: '1',
-                                result: 'shadowDiff',
-                            },
-
-                            {
-                                elementType: 'feFlood',
-                                'flood-color': '#000',
-                                'flood-opacity': '0.2',
-                            },
-                            {
-                                elementType: 'feComposite',
-                                in2: 'shadowDiff',
-                                operator: 'in',
-                            },
-                            {
-                                elementType: 'feComposite',
-                                in2: 'SourceGraphic',
-                                operator: 'over',
-                                result: 'firstfilter',
-                            },
-
-                            {
-                                elementType: 'feGaussianBlur',
-                                in: 'firstfilter',
-                                stdDeviation: '' + blurRadius,
-                                result: 'blur2',
-                            },
-                            {
-                                elementType: 'feOffset',
-                                dx: '' + blurOffsetX,
-                                dy: '' + blurOffsetY,
-                            },
-                            {
-                                elementType: 'feComposite',
-                                in2: 'firstfilter',
-                                operator: 'arithmetic',
-                                k2: '-1',
-                                k3: '1',
-                                result: 'shadowDiff',
-                            },
-
-                            {
-                                elementType: 'feFlood',
-                                'flood-color': '#000',
-                                'flood-opacity': '0.2',
-                            },
-                            {
-                                elementType: 'feComposite',
-                                in2: 'shadowDiff',
-                                operator: 'in',
-                            },
-                            {
-                                elementType: 'feComposite',
-                                in2: 'firstfilter',
-                                operator: 'over',
-                            },
-                        ],
-                    },
-                ],
-            });
-
-            const svgTriangleLeft = BB.createSvg({
-                elementType: 'path',
-                'vector-effect': 'non-scaling-stroke',
-                d: 'M0,0 L 100,0 0,100 z',
-                fill: 'rgba(0,0,0,0)',
-                class: 'toolspace-svg-triangle-button',
-            });
-            svgTriangleLeft.onclick = () => {
-                p.onLeft();
-                svgTriangleLeft.classList.remove('toolspace-svg-triangle-button-hover');
-            };
-
-            const svgTriangleRight = BB.createSvg({
-                elementType: 'path',
-                'vector-effect': 'non-scaling-stroke',
-                d: 'M100,100 L 100,0 0,100 z',
-                fill: 'rgba(0,0,0,0)',
-                class: 'toolspace-svg-triangle-button',
-            });
-            svgTriangleRight.onclick = () => {
-                p.onRight();
-                svgTriangleRight.classList.remove('toolspace-svg-triangle-button-hover');
-            };
-
-            // because :hover causes problems w touch
-            const leftPointerListener = new BB.PointerListener({
-                target: svgTriangleLeft,
-                onEnterLeave: (isOver) => {
-                    svgTriangleLeft.classList.toggle('toolspace-svg-triangle-button-hover', isOver);
-                },
-            });
-            const rightPointerListener = new BB.PointerListener({
-                target: svgTriangleRight,
-                onEnterLeave: (isOver) => {
-                    svgTriangleRight.classList.toggle(
-                        'toolspace-svg-triangle-button-hover',
-                        isOver,
-                    );
-                },
-            });
-
-            svg.append(defs, svgTriangleLeft, svgTriangleRight);
-            result.append(svg);
-
-            const leftIm = BB.el({
-                parent: result,
-                className: 'dark-invert',
-                css: {
-                    backgroundImage: "url('" + p.leftImage + "')",
-                    backgroundRepeat: 'no-repeat',
-                    backgroundSize: 'contain',
-                    width: 20,
-                    height: 20,
-                    position: 'absolute',
-                    left: 10,
-                    top: 8,
-                    //transform: p.doMirror ? 'scale(-1, 1)' : '',
-                    pointerEvents: 'none',
-                },
-            });
-            result.append(leftIm);
-
-            const rightIm = BB.el({
-                parent: result,
-                className: 'dark-invert',
-                css: {
-                    backgroundImage: "url('" + (p.rightImage ? p.rightImage : p.leftImage) + "')",
-                    backgroundRepeat: 'no-repeat',
-                    backgroundSize: 'contain',
-                    width: 20,
-                    height: 20,
-                    position: 'absolute',
-                    right: 10,
-                    bottom: 8,
-                    transform: p.rightImage ? '' : 'scale(-1, 1)',
-                    pointerEvents: 'none',
-                },
-            });
-
-            const setIsEnabledLeft = (b: boolean) => {
-                svgTriangleLeft.classList.toggle('toolspace-row-button-disabled', !b);
-                leftIm.classList.toggle('toolspace-row-button-disabled', !b);
-            };
-
-            const setIsEnabledRight = (b: boolean) => {
-                svgTriangleRight.classList.toggle('toolspace-row-button-disabled', !b);
-                rightIm.classList.toggle('toolspace-row-button-disabled', !b);
-            };
-
-            return {
-                el: result,
-                setIsEnabledLeft,
-                setIsEnabledRight,
-                leftPointerListener,
-                rightPointerListener,
-            };
-        };
-
-        this.toolDropdown = new ToolDropdown({
-            onChange: (activeStr) => {
-                this.setActive(activeStr, true);
-            },
-        });
-        this.rootEl.append(this.toolDropdown.getElement());
-
-        this.handButton = createButton({
-            onClick: () => {
-                this.setActive('hand', true);
-            },
-            image: toolHandImg,
-            contain: true,
-            doLighten: true,
-        });
-        this.handButton.el.classList.add('kl-tool-row-border-right');
-        this.handButton.el.title = `${LANG('tool-hand')} [H]`;
-        this.rootEl.append(this.handButton.el);
-
-        this.zoomInNOutButton = createTriangleButton({
-            onLeft: p.onZoomIn,
-            onRight: p.onZoomOut,
-            leftImage: toolZoomInImg,
-            rightImage: toolZoomOutImg,
-        });
-        this.zoomInNOutButton.el.title = LANG('tool-zoom');
-        this.rootEl.append(this.zoomInNOutButton.el);
-
-        this.zoomInButton = createButton({
-            onClick: p.onZoomIn,
-            image: toolZoomInImg,
-            contain: true,
-        });
-        this.zoomInButton.el.title = LANG('zoom-in');
-        this.rootEl.append(this.zoomInButton.el);
-
-        this.zoomOutButton = createButton({
-            onClick: p.onZoomOut,
-            image: toolZoomOutImg,
-            contain: true,
-        });
-        this.zoomOutButton.el.title = LANG('zoom-out');
-        this.rootEl.append(this.zoomOutButton.el);
-
-        this.undoNRedoButton = createTriangleButton({
-            onLeft: p.onUndo,
-            onRight: p.onRedo,
-            leftImage: toolUndoImg,
-            rightImage: null,
-        });
-        this.undoNRedoButton.el.title = LANG('undo') + '/' + LANG('redo');
-        this.undoNRedoButton.setIsEnabledLeft(false);
-        this.undoNRedoButton.setIsEnabledRight(false);
-        this.rootEl.append(this.undoNRedoButton.el);
-
-        this.undoButton = createButton({
+        this.undoButton = createUtilBtn({
             onClick: p.onUndo,
+            title: `${LANG('undo')} [Ctrl+Z]`,
             image: toolUndoImg,
-            contain: true,
+            disabled: true,
         });
-        this.undoButton.el.title = LANG('undo');
-        this.undoButton.el.classList.add('toolspace-row-button-disabled');
-        this.rootEl.append(this.undoButton.el);
-
-        this.redoButton = createButton({
+        this.redoButton = createUtilBtn({
             onClick: p.onRedo,
+            title: `${LANG('redo')} [Ctrl+Y]`,
             image: toolUndoImg,
-            contain: true,
             doMirror: true,
+            disabled: true,
         });
-        this.redoButton.el.title = LANG('redo');
-        this.redoButton.el.classList.add('toolspace-row-button-disabled');
-        this.rootEl.append(this.redoButton.el);
+        this.zoomOutButton = createUtilBtn({
+            onClick: p.onZoomOut,
+            title: LANG('zoom-out'),
+            image: toolZoomOutImg,
+        });
+        this.zoomInButton = createUtilBtn({
+            onClick: p.onZoomIn,
+            title: LANG('zoom-in'),
+            image: toolZoomInImg,
+        });
 
-        this.zoomInButton.el.style.display = 'none';
-        this.zoomOutButton.el.style.display = 'none';
-        this.undoButton.el.style.display = 'none';
-        this.redoButton.el.style.display = 'none';
+        this.utilRowEl.append(this.undoButton, this.redoButton);
+        this.utilRowEl.append(BB.el({ className: 'kl-tool-util-sep' }));
+        this.utilRowEl.append(this.zoomOutButton);
+        if (p.onFit) {
+            this.fitButton = createUtilBtn({
+                onClick: p.onFit,
+                title: `${LANG('hand-fit')} [Home]`,
+                image: viewportResetImg,
+            });
+            this.utilRowEl.append(this.fitButton);
+        }
+        this.utilRowEl.append(this.zoomInButton);
+
+        this.gridEl = BB.el({
+            className: 'kl-tool-grid',
+        });
+
+        const addToolBtn = (opts: {
+            id: TToolSlotId;
+            label: string;
+            title: string;
+            image?: string;
+            svgIcon?: IconName;
+            onClick: () => void;
+        }) => {
+            const btn = BB.el({
+                tagName: 'button',
+                className: 'kl-tool-grid__btn nohighlight',
+                title: opts.title,
+                onClick: opts.onClick,
+                props: {
+                    type: 'button',
+                    tabIndex: -1,
+                },
+            }) as HTMLButtonElement;
+
+            if (opts.svgIcon) {
+                btn.append(
+                    getIconSvg(opts.svgIcon, {
+                        width: 17,
+                        height: 17,
+                        pointerEvents: 'none',
+                    }),
+                );
+            } else if (opts.image) {
+                btn.append(
+                    BB.el({
+                        className: 'dark-invert kl-tool-grid__icon',
+                        css: {
+                            backgroundImage: "url('" + opts.image + "')",
+                        },
+                    }),
+                );
+            }
+            btn.append(
+                BB.el({
+                    tagName: 'span',
+                    className: 'kl-tool-grid__label',
+                    textContent: opts.label,
+                }),
+            );
+
+            new BB.PointerListener({
+                target: btn,
+                onEnterLeave: (isOver) => {
+                    btn.classList.toggle('kl-tool-grid__btn--hover', isOver);
+                },
+            });
+
+            this.toolButtons.push({ id: opts.id, el: btn });
+            this.gridEl.append(btn);
+        };
+
+        addToolBtn({
+            id: 'brush',
+            label: LANG('tool-brush'),
+            title: `${LANG('tool-brush')} [B]`,
+            image: toolPaintImg,
+            onClick: () => {
+                this.isEraserActive = false;
+                this.currentActiveStr = 'brush';
+                this.syncActiveHighlight();
+                this.onActivate('brush');
+            },
+        });
+        addToolBtn({
+            id: 'eraser',
+            label: LANG('eraser'),
+            title: `${LANG('eraser')} [E]`,
+            svgIcon: 'brush-eraser',
+            onClick: () => {
+                this.isEraserActive = true;
+                this.currentActiveStr = 'brush';
+                this.syncActiveHighlight();
+                if (this.onActivateEraser) {
+                    this.onActivateEraser();
+                } else {
+                    this.onActivate('brush');
+                }
+            },
+        });
+        addToolBtn({
+            id: 'paintBucket',
+            label: LANG('tool-paint-bucket'),
+            title: `${LANG('tool-paint-bucket')} [G]`,
+            image: toolFillImg,
+            onClick: () => this.setActive('paintBucket', true),
+        });
+        addToolBtn({
+            id: 'gradient',
+            label: LANG('tool-gradient'),
+            title: `${LANG('tool-gradient')} [G]`,
+            image: toolGradientImg,
+            onClick: () => this.setActive('gradient', true),
+        });
+        addToolBtn({
+            id: 'select',
+            label: LANG('tool-select'),
+            title: `${LANG('tool-select')} [L]`,
+            image: toolSelectImg,
+            onClick: () => this.setActive('select', true),
+        });
+        addToolBtn({
+            id: 'shape',
+            label: LANG('tool-shape'),
+            title: `${LANG('tool-shape')} [U]`,
+            image: toolShapeImg,
+            onClick: () => this.setActive('shape', true),
+        });
+        addToolBtn({
+            id: 'text',
+            label: LANG('tool-text'),
+            title: `${LANG('tool-text')} [T]`,
+            image: toolTextImg,
+            onClick: () => this.setActive('text', true),
+        });
+        addToolBtn({
+            id: 'hand',
+            label: LANG('tool-hand'),
+            title: `${LANG('tool-hand')} [H]`,
+            image: toolHandImg,
+            onClick: () => this.setActive('hand', true),
+        });
+
+        this.rootEl.append(this.utilRowEl, this.gridEl);
+        this.syncActiveHighlight();
     }
 
     // ---- interface ----
@@ -419,66 +291,39 @@ export class ToolspaceToolRow {
     }
 
     setIsSmall(b: boolean): void {
-        css(this.rootEl, {
-            height: b ? 36 : 54,
-        });
-
-        this.toolDropdown.setIsSmall(b);
-        this.handButton.setIsSmall(b);
-        this.zoomInButton.setIsSmall(b);
-        this.zoomOutButton.setIsSmall(b);
-        this.undoButton.setIsSmall(b);
-        this.redoButton.setIsSmall(b);
-
-        if (b) {
-            this.zoomInNOutButton.el.style.display = 'none';
-            this.undoNRedoButton.el.style.display = 'none';
-            this.zoomInButton.el.style.display = 'block';
-            this.zoomOutButton.el.style.display = 'block';
-            this.undoButton.el.style.display = 'block';
-            this.redoButton.el.style.display = 'block';
-        } else {
-            this.zoomInNOutButton.el.style.display = 'block';
-            this.undoNRedoButton.el.style.display = 'block';
-            this.zoomInButton.el.style.display = 'none';
-            this.zoomOutButton.el.style.display = 'none';
-            this.undoButton.el.style.display = 'none';
-            this.redoButton.el.style.display = 'none';
-        }
+        this.rootEl.classList.toggle('kl-tool-dock--compact', b);
     }
 
     setEnableZoomIn(b: boolean): void {
-        this.zoomInButton.el.classList.toggle('toolspace-row-button-disabled', !b);
-        this.zoomInNOutButton.setIsEnabledLeft(b);
+        this.zoomInButton.classList.toggle('toolspace-row-button-disabled', !b);
     }
 
     setEnableZoomOut(b: boolean): void {
-        this.zoomOutButton.el.classList.toggle('toolspace-row-button-disabled', !b);
-        this.zoomInNOutButton.setIsEnabledRight(b);
+        this.zoomOutButton.classList.toggle('toolspace-row-button-disabled', !b);
     }
 
     setEnableUndo(b: boolean): void {
-        this.undoButton.el.classList.toggle('toolspace-row-button-disabled', !b);
-        this.undoNRedoButton.setIsEnabledLeft(b);
+        this.undoButton.classList.toggle('toolspace-row-button-disabled', !b);
     }
 
     setEnableRedo(b: boolean): void {
-        this.redoButton.el.classList.toggle('toolspace-row-button-disabled', !b);
-        this.undoNRedoButton.setIsEnabledRight(b);
+        this.redoButton.classList.toggle('toolspace-row-button-disabled', !b);
+    }
+
+    setIsEraserActive(isEraser: boolean): void {
+        if (this.isEraserActive === isEraser) {
+            return;
+        }
+        this.isEraserActive = isEraser;
+        this.syncActiveHighlight();
     }
 
     setActive(activeStr: TToolType, doEmit?: boolean): void {
-        if (this.currentActiveStr === activeStr) {
-            return;
-        }
-
         this.currentActiveStr = activeStr;
-
-        this.toolDropdown.setActive(this.currentActiveStr);
-        this.handButton.el.classList.toggle(
-            'toolspace-row-button-activated',
-            this.currentActiveStr === 'hand',
-        );
+        if (activeStr !== 'brush') {
+            this.isEraserActive = false;
+        }
+        this.syncActiveHighlight();
 
         if (doEmit) {
             this.onActivate(this.currentActiveStr);

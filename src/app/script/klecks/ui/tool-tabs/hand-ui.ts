@@ -48,8 +48,9 @@ export class HandUi {
         onChangeUseInertiaScrolling: (b: boolean) => void;
     }) {
         this.rootEl = BB.el({
+            className: 'kl-panel-card',
             css: {
-                margin: '10px 10px 0',
+                margin: '8px 8px 0',
             },
         });
         this.scale = p.scale;

@@ -36,11 +36,12 @@ export function showModal<const GButton extends TModalButton<string> = never>(p:
     const rootRootEl = BB.el({
         parent: document.body,
         css: {
-            position: 'absolute',
+            position: 'fixed',
             left: 0,
             top: 0,
             right: 0,
             bottom: 0,
+            zIndex: 150,
             overflow: 'hidden',
         },
     });
@@ -54,7 +55,8 @@ export function showModal<const GButton extends TModalButton<string> = never>(p:
         css: {
             width: '100%',
             minHeight: '100%',
-            // padding: '10px 0',
+            padding: '16px',
+            boxSizing: 'border-box',
             position: 'relative',
             display: 'flex',
             flexDirection: 'column',
@@ -132,7 +134,10 @@ export function showModal<const GButton extends TModalButton<string> = never>(p:
             p.div,
         ],
         className: boxClasses,
-        css: p.style ? p.style : undefined,
+        css: {
+            zIndex: 1,
+            ...(p.style ? p.style : {}),
+        },
     });
 
     scrollContent.append(

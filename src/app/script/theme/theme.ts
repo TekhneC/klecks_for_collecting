@@ -15,12 +15,13 @@ class Theme {
 
     private updateTheme(): void {
         const oldTheme = this.theme;
-        this.theme = this.storedTheme || this.mediaQueryTheme;
+        // Light mode only for now while the unified UI is being built.
+        this.theme = 'light';
 
+        document.documentElement.classList.remove('kl-theme-dark');
         if (this.theme === oldTheme) {
             return;
         }
-        document.documentElement.classList.toggle('kl-theme-dark', this.theme === 'dark');
         this.listeners.forEach((item) => item());
     }
 

@@ -15,6 +15,7 @@ export class MobileUi {
     private toolspaceIsOpen: boolean = true;
     private orientation: TUiLayout = 'right';
     private isVisible: boolean = false;
+    private toolWidth: number = 288;
     private readonly toolspaceCollapser: ToolspaceCollapser;
     private readonly mobileWrapperEl: HTMLElement;
     private readonly onShowToolspace: TMobileUiParams['onShowToolspace'];
@@ -61,13 +62,13 @@ export class MobileUi {
                 this.mobileWrapperEl.style.display = 'none';
                 if (this.orientation === 'left') {
                     css(this.rootEl, {
-                        left: 271,
+                        left: this.toolWidth,
                         right: '',
                     });
                 } else {
                     css(this.rootEl, {
                         left: '',
-                        right: 271,
+                        right: this.toolWidth,
                     });
                 }
             } else {
@@ -93,6 +94,11 @@ export class MobileUi {
     setOrientation(orientation: TUiLayout): void {
         this.orientation = orientation;
         this.toolspaceCollapser.setOrientation(orientation);
+    }
+
+    setToolWidth(width: number): void {
+        this.toolWidth = width;
+        this.update();
     }
 
     setIsVisible(b: boolean): void {

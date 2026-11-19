@@ -538,9 +538,10 @@ export class SelectUi {
         };
 
         this.rootEl = BB.el({
+            className: 'kl-panel-card',
             content: [this.modeOptions.getElement()],
             css: {
-                margin: '10px 10px 0',
+                margin: '8px 8px 0',
             },
         });
         updateMode();

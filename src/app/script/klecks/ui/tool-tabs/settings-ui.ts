@@ -5,8 +5,7 @@ import { LANG, LANGUAGE_STRINGS, LS_LANGUAGE_KEY } from '../../../language/langu
 import { languages } from '../../../../languages/languages';
 import klecksLogoImg from 'url:/src/app/img/klecks-logo.png';
 import { LocalStorage } from '../../../bb/base/local-storage';
-import { THEME, TTheme } from '../../../theme/theme';
-import { addIsDarkListener, css, nullToUndefined } from '../../../bb/base/base';
+import { css, nullToUndefined } from '../../../bb/base/base';
 import { showLicensesDialog } from '../modals/licenses-dialog/show-licenses-dialog';
 import { c } from '../../../bb/base/c';
 import { SaveReminder } from '../components/save-reminder';
@@ -28,8 +27,9 @@ export class SettingsUi {
     // ----------------------------------- public -----------------------------------
     constructor({ onLeftRight, saveReminder, customAbout }: TSettingsUiParams) {
         this.rootEl = BB.el({
+            className: 'kl-panel-card',
             css: {
-                margin: '10px 10px 0',
+                margin: '8px 8px 0',
             },
         });
 
@@ -96,50 +96,7 @@ export class SettingsUi {
 
         langWrapper.append(languageSelect.getElement(), languageHint);
 
-        // ---- theme ----
-        function themeToLabel(theme: TTheme): string {
-            return theme === 'dark' ? '⬛ ' + LANG('theme-dark') : '⬜ ' + LANG('theme-light');
-        }
-        const themeSelect = new SelectCustom({
-            optionArr: [
-                ['auto', LANG('auto') + ' → ' + themeToLabel(THEME.getMediaQueryTheme())],
-                ['light', themeToLabel('light')],
-                ['dark', themeToLabel('dark')],
-            ],
-            initValue: THEME.getStoredTheme() || 'auto',
-            onChange: (val): void => {
-                THEME.setStoredTheme(val === 'auto' ? undefined : val);
-            },
-            name: 'ui-theme',
-        });
-        css(themeSelect.getElement(), {
-            flexGrow: 1,
-        });
-        addIsDarkListener(() => {
-            themeSelect.updateLabel(
-                'auto',
-                LANG('auto') + ' → ' + themeToLabel(THEME.getMediaQueryTheme()),
-            );
-        });
-        BB.el({
-            parent: this.rootEl,
-            content: [
-                BB.el({
-                    content: LANG('settings-theme') + ':',
-                    css: {
-                        marginRight: 5,
-                        marginBottom: 2,
-                    },
-                }),
-                themeSelect.getElement(),
-            ],
-            css: {
-                marginTop: 15,
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-            },
-        });
+        // Theme selector is hidden while light mode is the only supported theme.
 
         // ---- pixelated zoom ----
         const pixelatedZoomToggle = new PixelatedZoomToggle();

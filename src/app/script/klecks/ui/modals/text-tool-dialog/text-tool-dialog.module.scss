@@ -4,9 +4,7 @@
         rgba(0, 0, 0, 0.2) 0 1px,
         rgba(0, 0, 0, 0.2) 0 -1px;
     width: calc(100% + 40px);
-    height: calc(100vh - 400px);
-    min-height: 200px;
-    max-height: 600px;
+    height: clamp(160px, calc(100dvh - 460px), 520px);
     overflow: hidden;
 }
 
@@ -62,6 +60,11 @@
 
         > * {
             display: flex !important;
+        }
+
+        > :first-child {
+            padding-right: 245px;
+            box-sizing: border-box;
         }
     }
 }

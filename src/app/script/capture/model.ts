@@ -72,6 +72,15 @@ export class ProcessClock {
         return this.processMs;
     }
 
+    reset(): void {
+        this.status = 'idle';
+        this.processMs = 0;
+        this.wallOriginMs = 0;
+        this.performanceOrigin = 0;
+        this.lastPerf = 0;
+        this.running = false;
+    }
+
     advance(now: number): number {
         if (this.running) {
             const delta = now - this.lastPerf;

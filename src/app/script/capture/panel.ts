@@ -568,7 +568,7 @@ export function mountCapturePanel(actions: {
         }
         gateMode = 'edit';
         heading.textContent = '作品信息';
-        lead.textContent = '保存会更新这一幅作品的收集信息，并留在本页。返回绘画回到画布。不会切换作品，也不会结束这一轮。';
+        lead.textContent = '填写期间计时自动暂停。保存会更新这一幅作品的收集信息并留在本页；返回绘画回到画布后自动恢复计时。不会切换作品，也不会结束这一轮。';
         backBtn.hidden = false;
         backBtn.textContent = '返回绘画';
         gate.hidden = false;

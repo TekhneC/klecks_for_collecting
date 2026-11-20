@@ -1,6 +1,6 @@
 # Klecks 仓库说明
 
-本仓库是上游绘画应用 Klecks。当前提交 `53e046b`（0.11.3.3）之上有未提交的过程采集层。采集说明见 `docs/capture/`，当前状态见 [PROJECT_STATE.md](PROJECT_STATE.md)。
+本仓库是上游绘画应用 Klecks。基线提交 `53e046b`（0.11.3.3）之上有已在本地提交的过程采集层。采集说明见 `docs/capture/`，当前状态见 [PROJECT_STATE.md](PROJECT_STATE.md)。
 
 先读项目状态，再按其中的索引阅读 `governance/`。没有 Decision 编号的实现行为只是现状，不能当成以后必须遵守的设计。
 

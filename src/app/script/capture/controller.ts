@@ -149,6 +149,8 @@ export class CaptureController {
     private suppressHistory = false;
     private worksBackfilled = false;
     private replayHold = false;
+    private workInfoHold = false;
+    private ending = false;
     private readonly adminMode = new URLSearchParams(location.search).has('admin');
     private adminUnlocked = false;
 
@@ -159,7 +161,7 @@ export class CaptureController {
             onContinue: () => void this.resumePaint(),
             onPause: () => this.pause(),
             onResume: () => this.resume(),
-            onEnd: () => this.end(),
+            onEnd: () => void this.end(),
             onSave: () => void this.flush(true),
             onExport: () => void this.exportZip(),
             onSubmit: () => void this.submitLocal(),
@@ -170,7 +172,7 @@ export class CaptureController {
             onWatch: () => void this.watch(),
             onResumePaint: () => void this.continuePaint(),
             onOpenWork: () => void this.openSelectedWork(),
-            onSwitch: () => this.switchWork(),
+            onSwitch: () => void this.switchWork(),
             onPlay: () => void this.play(),
             onPauseReplay: () => this.pauseReplay(),
             onExitReplay: () => this.exitReplay(),
@@ -527,30 +529,61 @@ export class CaptureController {
         void this.flush(true);
     }
 
-    private end(): void {
+    private async finalizeCurrentSession(): Promise<{ ok: boolean; processMs: number }> {
+        if (this.clock.status !== 'recording' && this.clock.status !== 'paused') {
+            return { ok: true, processMs: this.clock.processMs };
+        }
+        if (this.ending) {
+            return { ok: false, processMs: this.clock.processMs };
+        }
+        this.ending = true;
+        try {
+            if (this.replaying) {
+                this.exitReplay();
+            }
+            this.finishReplayHold(false);
+            this.finishWorkInfoHold(false);
+            const processMs = this.clock.end(performance.now());
+            this.syncCanvasLock();
+            this.strokeOpen = false;
+            this.enqueue('session', {
+                type: 'end',
+                processMs,
+                drawingDurationMs: processMs,
+                drawingDurationNote: '原始绘制时长等于过程时钟，已扣除明确暂停，未扣除思考或鼠标静止，也不等于回放长度或净落笔时长。',
+                duringPauseEdits: this.duringPauseEdits,
+                endedAt: new Date().toISOString(),
+            });
+            await this.copyCheckpoint(this.log.sequence, 'end', processMs);
+            await this.rememberWork();
+            await this.flush(true, true);
+            if (this.lastFlushError) {
+                this.render();
+                return { ok: false, processMs };
+            }
+            this.clock.reset();
+            this.sessionId = '';
+            this.syncCanvasLock();
+            this.render();
+            return { ok: true, processMs };
+        } finally {
+            this.ending = false;
+        }
+    }
+
+    private async end(): Promise<void> {
         if (this.clock.status !== 'recording' && this.clock.status !== 'paused') {
             return;
         }
-        if (this.replaying) {
-            this.exitReplay();
+        const result = await this.finalizeCurrentSession();
+        if (!result.ok) {
+            return;
         }
-        this.finishReplayHold(false);
-        const processMs = this.clock.end(performance.now());
-        this.syncCanvasLock();
-        this.strokeOpen = false;
-        this.enqueue('session', {
-            type: 'end',
-            processMs,
-            drawingDurationMs: processMs,
-            drawingDurationNote: '原始绘制时长等于过程时钟，已扣除明确暂停，未扣除思考或鼠标静止，也不等于回放长度或净落笔时长。',
-            duringPauseEdits: this.duringPauseEdits,
-            endedAt: new Date().toISOString(),
-        });
-        this.queueCheckpoint(this.log.sequence, 'end', processMs);
-        void this.rememberWork();
-        this.panel.setStatus(`已结束。原始绘制时长 ${(processMs / 1000).toFixed(1)} 秒。本地记录仍在，上传失败不会删除。`);
-        this.render();
-        void this.flush(true);
+        await this.refreshWorks(this.work.workId);
+        this.panel.showGate();
+        this.panel.setStatus(
+            `已结束并保存。原始绘制时长 ${(result.processMs / 1000).toFixed(1)} 秒。本地记录仍在，上传失败不会删除。`,
+        );
     }
 
     private queueCheckpoint(sequence: number, reason: string, tProcess: number): void {
@@ -573,11 +606,11 @@ export class CaptureController {
                 });
                 return;
             }
-            this.copyCheckpoint(sequence, reason, tProcess);
+            void this.copyCheckpoint(sequence, reason, tProcess);
         });
     }
 
-    private copyCheckpoint(sequence: number, reason: string, tProcess: number): void {
+    private copyCheckpoint(sequence: number, reason: string, tProcess: number): Promise<void> {
         const layers = this.host.getLayers();
         const size = this.host.getCanvasSize();
         const copies = layers.map((layer) => {
@@ -610,7 +643,7 @@ export class CaptureController {
         }
         this.pendingCheckpoint++;
         const checkpointId = newId('ckpt');
-        void this.encodeCheckpoint(checkpointId, sequence, reason, tProcess, flat, copies).finally(() => {
+        return this.encodeCheckpoint(checkpointId, sequence, reason, tProcess, flat, copies).finally(() => {
             this.pendingCheckpoint = Math.max(0, this.pendingCheckpoint - 1);
         });
     }
@@ -866,6 +899,11 @@ export class CaptureController {
             this.panel.setStatus('已继续绘画。回放没有改动画布。');
             return;
         }
+        if (this.workInfoHold) {
+            this.finishWorkInfoHold(true);
+            this.panel.setStatus('已继续绘画。');
+            return;
+        }
         if (this.clock.status === 'paused') {
             this.resume();
             this.panel.setStatus('已继续绘画。');
@@ -877,11 +915,45 @@ export class CaptureController {
         await this.resumePaint();
     }
 
+    private holdClockForWorkInfo(): void {
+        if (this.clock.status !== 'recording' || this.workInfoHold) {
+            return;
+        }
+        const processMs = this.clock.pause(performance.now());
+        this.workInfoHold = true;
+        this.syncCanvasLock();
+        this.enqueue('interval', {
+            type: 'work_info_hold_start',
+            processMs,
+            at: new Date().toISOString(),
+            note: '填写作品信息。过程时钟停止，画布输入无效。',
+        });
+        this.render();
+    }
+
+    private finishWorkInfoHold(resumeClock: boolean): void {
+        if (!this.workInfoHold) {
+            return;
+        }
+        this.workInfoHold = false;
+        if (resumeClock && this.clock.status === 'paused') {
+            this.clock.resume(performance.now());
+        }
+        this.syncCanvasLock();
+        this.enqueue('interval', {
+            type: 'work_info_hold_end',
+            processMs: this.clock.processMs,
+            at: new Date().toISOString(),
+        });
+        this.render();
+    }
+
     private editWorkInfo(): void {
         if (!this.work.workId) {
             this.panel.setStatus('先进入一个作品，再修改作品信息。', 'error');
             return;
         }
+        this.holdClockForWorkInfo();
         this.panel.write(this.work);
         this.panel.showWorkInfo();
     }
@@ -918,6 +990,9 @@ export class CaptureController {
     private cancelWorkInfo(): void {
         this.panel.write(this.work);
         this.panel.collapse();
+        if (this.workInfoHold) {
+            this.finishWorkInfoHold(true);
+        }
     }
 
     private async promptAdminLock(): Promise<void> {
@@ -1057,10 +1132,21 @@ export class CaptureController {
         this.panel.hideAdminReplay();
     }
 
-    private switchWork(): void {
+    private async switchWork(): Promise<void> {
         if (this.clock.status === 'recording' || this.clock.status === 'paused') {
-            this.end();
-        } else if (this.replaying) {
+            if (!window.confirm('当前绘画尚未结束。切换作品前将先保存当前绘画并结束本轮，是否继续？')) {
+                return;
+            }
+            const result = await this.finalizeCurrentSession();
+            if (!result.ok) {
+                return;
+            }
+            await this.refreshWorks(this.work.workId);
+            this.panel.showGate();
+            this.panel.setStatus('已保存当前绘画。请选择作品或新建作品。');
+            return;
+        }
+        if (this.replaying) {
             this.exitReplay();
         }
         this.panel.showGate();
@@ -1072,14 +1158,18 @@ export class CaptureController {
             return;
         }
         if (this.clock.status === 'recording' || this.clock.status === 'paused') {
-            this.panel.setStatus('先结束本轮，再切换作品。', 'error');
-            await this.refreshWorks(this.work.workId);
-            return;
+            if (!window.confirm('当前绘画尚未结束。打开已有作品前将先保存当前绘画，再用目标作品的末位检查点替换画布，是否继续？')) {
+                await this.refreshWorks(this.work.workId);
+                return;
+            }
+            const saved = await this.finalizeCurrentSession();
+            if (!saved.ok) {
+                return;
+            }
         }
         if (this.replaying) {
             this.exitReplay();
         }
-        const switching = this.work.workId !== workId;
         const records = await this.store.recordsForWork(workId);
         const restored = await this.mutateCanvas(() => this.restoreLastState(records));
         if (!restored) {
@@ -1102,11 +1192,8 @@ export class CaptureController {
             driverNote: previous?.driverNote || '',
         };
         this.panel.write(this.work);
-        if (switching) {
-            this.clock.status = 'idle';
-            this.clock.processMs = 0;
-            this.sessionId = '';
-        }
+        this.clock.reset();
+        this.sessionId = '';
         this.syncCanvasLock();
         await this.refreshWorks(workId);
         this.panel.collapse();
@@ -1147,9 +1234,6 @@ export class CaptureController {
     }
 
     private async resumePaint(): Promise<void> {
-        if (this.clock.status === 'recording') {
-            return;
-        }
         const authorId = this.panel.getAuthorId().trim();
         if (!authorId) {
             this.panel.setStatus('需要填写匿名作者编号。', 'error');
@@ -1160,23 +1244,30 @@ export class CaptureController {
             this.panel.setStatus('先选择该作者的已有作品。', 'error');
             return;
         }
+        const inSession = this.clock.status === 'recording' || this.clock.status === 'paused';
+        if (inSession) {
+            if (this.work.workId === workId) {
+                if (this.clock.status === 'paused') {
+                    await this.continuePaint();
+                }
+                return;
+            }
+            if (!window.confirm('当前绘画尚未结束。转到另一幅作品继续绘画前将先保存当前绘画，再用目标作品的末位检查点替换画布，是否继续？')) {
+                return;
+            }
+            const saved = await this.finalizeCurrentSession();
+            if (!saved.ok) {
+                return;
+            }
+        }
         if (this.replaying) {
             this.exitReplay();
         }
         const records = await this.store.recordsForWork(workId);
-        const sameLiveCanvas = this.work.workId === workId && this.clock.status !== 'idle';
-        const liveProcessMs = sameLiveCanvas ? this.clock.processMs : 0;
-        if (sameLiveCanvas) {
-            if (this.clock.status === 'paused') {
-                this.closeOpenSession();
-            }
-        } else {
-            this.closeOpenSession();
-            const restored = await this.mutateCanvas(() => this.restoreLastState(records));
-            if (!restored) {
-                this.panel.setStatus('这份作品没有可续画的画面。', 'error');
-                return;
-            }
+        const restored = await this.mutateCanvas(() => this.restoreLastState(records));
+        if (!restored) {
+            this.panel.setStatus('这份作品没有可续画的画面。', 'error');
+            return;
         }
         const stored = (await this.store.listWorks()).find((work) => work.workId === workId);
         const previous = this.workMetaFrom(records);
@@ -1193,7 +1284,7 @@ export class CaptureController {
             driverNote: previous?.driverNote || '',
         };
         this.panel.write(this.work);
-        this.resumeProcessMs = Math.max(stored?.processMs ?? 0, this.maxProcess(records), liveProcessMs);
+        this.resumeProcessMs = Math.max(stored?.processMs ?? 0, this.maxProcess(records));
         this.log.sequence = this.maxSequence(records);
         this.log.lastActiveSequence = this.log.sequence;
         this.log.undoDepth = 0;

@@ -17,6 +17,9 @@ assert.equal(drawingDurationMs(clock.processMs), 2500);
 clock.end(62_000);
 assert.equal(clock.status, 'ended');
 assert.equal(clock.processMs, 3000);
+clock.reset();
+assert.equal(clock.status, 'idle');
+assert.equal(clock.processMs, 0);
 
 const continued = new ProcessClock();
 continued.continueFrom(10, 20, 3000);
